@@ -662,3 +662,66 @@ def test_worker_down_once_per_person_and_names_the_side():
 def test_worker_down_runs_in_site_mode_only():
     assert "worker_down" in ids(rules.evaluate([person(LYING)], INDOOR))
     assert rules.evaluate([person(LYING)], SceneContext(mode=Mode.HOME)) == []
+
+
+# --- under_suspended_load (PERSON is 0.4 tall, top at y 0.30) ------------------------------
+HOOK_ABOVE = (0.43, 0.05, 0.47, 0.15)
+
+
+def test_suspended_load_flags_person_under_crane_hook():
+    hazards = rules.under_suspended_load([person(), det("crane_hook", HOOK_ABOVE)])
+    assert ids(hazards) == ["under_suspended_load"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject == "person:0"
+    assert "directly under a crane hook" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    ("hook", "flagged"),
+    [((0.43, 0.20, 0.47, 0.33), True), ((0.43, 0.20, 0.47, 0.35), False)],
+    ids=["bottom-0.03-below-top", "bottom-0.05-below-top"],
+)
+def test_suspended_load_hook_must_be_above_the_person(hook, flagged):
+    # limit: hook.y2 <= person.y1 + 0.1 x person height = 0.34
+    assert bool(rules.under_suspended_load([person(), det("crane_hook", hook)])) is flagged
+
+
+def test_suspended_load_clear_when_hook_is_below_the_person():
+    assert rules.under_suspended_load([person(), det("crane_hook", (0.43, 0.75, 0.47, 0.80))]) == []
+
+
+@pytest.mark.parametrize(
+    ("hook", "flagged"),
+    [((0.89, 0.05, 0.93, 0.15), True), ((0.91, 0.05, 0.95, 0.15), False)],
+    ids=["side-gap-0.39", "side-gap-0.41"],
+)
+def test_suspended_load_horizontal_threshold(hook, flagged):
+    # limit: 1.0 x person height = 0.4
+    found = rules.under_suspended_load([person(), det("crane_hook", hook)])
+    assert bool(found) is flagged
+    if flagged:
+        assert "0.98x their height to the side of a crane hook" in found[0].reason
+
+
+def test_suspended_load_uses_aspect_ratio_for_horizontal_gap():
+    hook = det("crane_hook", (0.89, 0.05, 0.93, 0.15))  # 0.39 -> 0.69 at 16:9
+    assert rules.under_suspended_load([person(), hook], aspect_ratio=16 / 9) == []
+
+
+def test_suspended_load_once_per_person_with_two_hooks():
+    hooks = [det("crane_hook", HOOK_ABOVE), det("crane_hook", (0.30, 0.05, 0.35, 0.12))]
+    hazards = rules.under_suspended_load([person(), *hooks])
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 3
+
+
+def test_suspended_load_flags_each_person_under_one_hook():
+    other = person((0.48, 0.30, 0.58, 0.70))
+    hazards = rules.under_suspended_load([person(), other, det("crane_hook", HOOK_ABOVE)])
+    assert [h.subject for h in hazards] == ["person:0", "person:1"]
+
+
+@pytest.mark.parametrize(("source", "flagged"), [("yoloe", True), ("detector", False)])
+def test_suspended_load_hook_cutoff_follows_source(source, flagged):
+    scene = [person(), src("crane_hook", 0.30, source, HOOK_ABOVE)]
+    assert ("under_suspended_load" in ids(rules.evaluate(scene, INDOOR))) is flagged

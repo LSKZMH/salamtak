@@ -31,6 +31,8 @@ WORKER_DOWN_RATIO = 1.4  # real width / height at or above this = lying down
 WORKER_DOWN_MIN_HEIGHT = 0.04  # ignore tiny far-away boxes (fraction of image height)
 BORDER_MARGIN = 0.01  # a box this close to an edge is cut off (a cut-off torso looks wide)
 WORKER_DOWN_MAX_INSIDE = 0.6  # a person box >= 60% inside a machine/vehicle is its driver
+SUSPENDED_LOAD_FACTOR = 1.0  # crane hook within 1.0 x person height to the side
+SUSPENDED_LOAD_TOP_FRACTION = 0.1  # hook bottom may reach 0.1 x person height below their top
 
 # --- Labels (normalized: lowercase, underscores) ------------------------------
 PERSON, HELMET, NO_HELMET = "person", "helmet", "no_helmet"
@@ -122,6 +124,11 @@ def centre_y(box: Box) -> float:
 def width_to_height(box: Box, aspect_ratio: float = 1.0) -> float:
     """Box width / height in real pixels (same aspect_ratio conversion as ``gap``)."""
     return (box[2] - box[0]) * aspect_ratio / height(box)
+
+
+def horizontal_gap(a: Box, b: Box, aspect_ratio: float = 1.0) -> float:
+    """Side-to-side distance between two boxes in image heights (0 when they overlap in x)."""
+    return max(0.0, b[0] - a[2], a[0] - b[2]) * aspect_ratio
 
 
 def touches_border(box: Box, margin: float = BORDER_MARGIN) -> bool:
@@ -393,6 +400,44 @@ def worker_down(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> l
     return hazards
 
 
+def _hooks_over(
+    person: Detection, hooks: Sequence[Detection], aspect_ratio: float
+) -> list[tuple[Detection, float]]:
+    """Crane hooks above this person and close to the side of them, nearest first."""
+    tall = height(person.box)
+    lowest_bottom = person.box[1] + SUSPENDED_LOAD_TOP_FRACTION * tall
+    hits = [
+        (h, horizontal_gap(person.box, h.box, aspect_ratio))
+        for h in hooks
+        if h.box[3] <= lowest_bottom
+    ]
+    close = [(h, g) for h, g in hits if g <= SUSPENDED_LOAD_FACTOR * tall]
+    return sorted(close, key=lambda hit: hit[1])
+
+
+def under_suspended_load(
+    detections: Sequence[Detection], aspect_ratio: float = 1.0
+) -> list[Hazard]:
+    """Person below a crane hook (suspended load) and horizontally close to it."""
+    hooks = with_labels(detections, {CRANE_HOOK})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        close = _hooks_over(person, hooks, aspect_ratio)
+        if not close:
+            continue
+        side = close[0][1] / height(person.box)
+        where = "directly under" if side == 0 else f"{side:.2f}x their height to the side of"
+        hazards.append(
+            Hazard.of(
+                "under_suspended_load",
+                f"Person {i + 1} is {where} a crane hook (suspended load overhead).",
+                (person.box, *(h.box for h, _ in close)),
+                _subject(i),
+            )
+        )
+    return hazards
+
+
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
@@ -454,5 +499,6 @@ def evaluate(detections: Sequence[Detection], context: SceneContext | None = Non
         *no_vest_near_vehicle(dets, ratio),
         *trip_cord(dets),
         *worker_down(dets, ratio),
+        *under_suspended_load(dets, ratio),
     ]
     return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)
