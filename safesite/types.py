@@ -38,11 +38,23 @@ HAZARD_SEVERITY: dict[str, Severity] = {
     "home_trip": Severity.MEDIUM,
     "home_slip": Severity.MEDIUM,
     "home_child_reach": Severity.MEDIUM,
+    # v2 (PLAN-v2.md)
+    "worker_down": Severity.HIGH,
+    "under_suspended_load": Severity.HIGH,
+    "power_line_contact": Severity.HIGH,
+    "hot_work_fire": Severity.HIGH,
+    "fall_into_opening": Severity.HIGH,
+    "no_fire_extinguisher": Severity.MEDIUM,
+    "exposed_rebar": Severity.MEDIUM,
 }
 HAZARD_IDS: tuple[str, ...] = tuple(HAZARD_SEVERITY)
 
 # Trained detector classes (YOLO ids 0-6), from the Data section of CLAUDE.md.
 UNIFIED_CLASSES: tuple[str, ...] = ("person", "helmet", "no_helmet", "vest", "no_vest", "machinery", "vehicle")
+# v2 detector adds ids 7-10. A model is valid if its class names equal
+# UNIFIED_CLASSES (v1 weights) or MODEL_CLASSES_V2 (v2 weights).
+EXTENDED_CLASSES: tuple[str, ...] = ("harness", "scaffold", "crane_hook", "utility_pole")
+MODEL_CLASSES_V2: tuple[str, ...] = UNIFIED_CLASSES + EXTENDED_CLASSES
 
 
 def normalize_label(label: str) -> str:
