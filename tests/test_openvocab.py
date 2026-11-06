@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from safesite import openvocab
+from safesite import openvocab, rules
 from safesite.openvocab import (
     HOME_PROMPTS,
     SITE_PROMPTS,
@@ -16,28 +16,35 @@ from safesite.openvocab import (
 )
 from safesite.types import Detection
 
-# Labels rules.py (Chat 3) looks for; openvocab must only ever emit these.
-RULES_OPEN_VOCAB_LABELS = {
-    "harness", "scaffold", "ladder", "shade_tent", "water_cooler",
-    "cord", "hose", "wet_floor", "knife", "chemicals",
-}
-
 
 # ---------- prompt sets ----------
 def test_site_prompts_cover_the_requested_objects():
     assert set(SITE_PROMPTS) == {
         "safety harness", "scaffolding", "ladder", "shade tent",
-        "water cooler", "extension cord", "hose",
+        "water cooler", "extension cord", "cable on the floor", "hose",
     }
 
 
 def test_home_prompts_cover_the_requested_objects():
-    assert set(HOME_PROMPTS) == {"extension cord", "wet floor", "knife", "cleaning chemicals"}
+    assert set(HOME_PROMPTS) == {
+        "extension cord", "cable on the floor", "wet floor", "knife", "cleaning chemicals",
+    }
+
+
+@pytest.mark.parametrize("prompts", [SITE_PROMPTS, HOME_PROMPTS], ids=["site", "home"])
+def test_cable_on_the_floor_counts_as_a_cord(prompts):
+    # "extension cord" alone missed every real cord photo we tried; this wording finds them.
+    assert prompts["cable on the floor"] == prompts["extension cord"] == "cord"
 
 
 def test_every_prompt_maps_to_a_label_rules_py_understands():
     labels = set(SITE_PROMPTS.values()) | set(HOME_PROMPTS.values())
-    assert labels <= RULES_OPEN_VOCAB_LABELS
+    assert labels <= rules.OPEN_VOCAB_LABELS  # so rules.py gives them its open-vocab cut-off
+
+
+def test_detector_meets_the_app_detector_contract():
+    assert OpenVocabDetector.is_mock is False
+    assert OpenVocabDetector.supports_home is True
 
 
 @pytest.mark.parametrize(
