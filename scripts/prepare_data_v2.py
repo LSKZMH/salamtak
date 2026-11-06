@@ -48,6 +48,14 @@ ROBOFLOW = {  # alias -> [(workspace, project), fallback...]
     "hrn": [("project-xksuq", "helmet-harness-detection")],
     "scf": [("testscaff", "hybrid-dataset-for-scaffold-detection")],
 }
+# Version pins (default: newest). mocs v1 is the only version keeping all 13 classes (v3/v4 omit
+# hanging head etc.); scf v1 is the full 6,250-image set (later versions are 20-280 image experiments).
+ROBOFLOW_VERSION = {"mocs": 1, "scf": 1}
+# Sources left out on purpose (reason goes into sources.json and the card).
+SKIP_REASONS = {
+    "mocs": "Roboflow yisong-li/mocs is a ~200-image sample, not MOCS; every version either omits "
+            "'hanging head' (v3, v4) or has none in its export (v1: 8 train images). crane_hook is left to YOLOE.",
+}
 PPE_URL = "https://github.com/ultralytics/assets/releases/download/v0.0.0/construction-ppe.zip"
 
 # Source class name (case-insensitive, stripped) -> v2 class, None = drop.
@@ -65,7 +73,9 @@ V2_MAPPING: dict[str, dict[str, str | None]] = {
              "static crane": "machinery", "concrete mixer": "machinery",
              "pump truck": "machinery", "pile driving": "machinery",
              "truck": "vehicle", "other vehicle": "vehicle", "hanging head": "crane_hook"},
-    "hrn": {"safety-harness": "harness", "head helmet": "helmet"},
+    # hrn v14 classes are head / helmet / safety-harness (no "head helmet"). Checked on drawn boxes:
+    # "helmet" = head wearing a helmet, "head" = bare head -> no_helmet.
+    "hrn": {"safety-harness": "harness", "helmet": "helmet", "head": "no_helmet"},
     "scf": {"scaffold": "scaffold", "diagonal-brace": None, "ledger": None, "standard": None},
 }
 for _a in HF_REPO:
@@ -78,7 +88,7 @@ LABELLED: dict[str, list[str]] = {
     "chd": ["person", "helmet", "no_helmet", "vest", "no_vest", "machinery", "vehicle", "utility_pole"],
     "ppe": ["person", "helmet", "no_helmet", "vest", "no_vest", "vehicle"],
     "mocs": ["person", "machinery", "vehicle", "crane_hook"],
-    "hrn": ["harness", "helmet"],
+    "hrn": ["helmet", "no_helmet", "harness"],
     "scf": ["scaffold"],
 }
 ORIGIN = {**{a: f"hf:{r}" for a, r in HF_REPO.items()},
@@ -293,7 +303,7 @@ def download_roboflow(alias: str) -> bool:
         for attempt in (1, 2):
             try:
                 proj = rf.workspace(ws).project(project)
-                ver = _newest_version(proj)
+                ver = ROBOFLOW_VERSION.get(alias) or _newest_version(proj)
                 print(f"[{alias}] {ws}/{project} v{ver} (attempt {attempt})", flush=True)
                 proj.version(ver).download("yolov8", location=str(dest), overwrite=True)
                 (dest / ".done").write_text(json.dumps({"workspace": ws, "project": project,
@@ -532,6 +542,10 @@ def cmd_convert(args: argparse.Namespace) -> None:
 
     plans: dict[str, list[tuple[dict, str]]] = {}
     for alias in ("chd", "ppe", "mocs", "hrn", "scf"):
+        if alias in SKIP_REASONS:
+            print(f"[{alias}] skipped: {SKIP_REASONS[alias]}")
+            skipped.append(alias)
+            continue
         _, items = read_source(alias)
         if not items:
             print(f"[{alias}] not downloaded -> skipped")
@@ -584,7 +598,8 @@ def write_sources_json(out: Path, counts: dict, dd: dict, skipped: list[str]) ->
                       "val_images": counts["val"].get(a, {}).get("images", 0)}
         if meta.exists():
             sources[a]["roboflow_version"] = json.loads(meta.read_text())
-    doc = {"classes": CLASSES, "sources": sources, "skipped_sources": skipped,
+    doc = {"classes": CLASSES, "sources": sources,
+           "skipped_sources": {a: SKIP_REASONS.get(a, "download failed") for a in skipped},
            "teacher": None, "dedupe": dd}
     (out / "sources.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
 
@@ -650,7 +665,7 @@ def dataset_card(doc: dict, counts: dict, title: str) -> str:
         lines.append(f"| {a} | `{s['origin']}` | {s['license']} | {', '.join(s['labelled_classes'])} "
                      f"| {s['train_images']} | {s['val_images']} |")
     if doc.get("skipped_sources"):
-        lines += ["", f"Skipped (download failed): {', '.join(doc['skipped_sources'])}"]
+        lines += ["", "Skipped sources:"] + [f"- {a}: {r}" for a, r in doc["skipped_sources"].items()]
     lines += ["", "## De-duplication", "", "```json", json.dumps(doc["dedupe"], indent=2), "```",
               "", "## Box counts (ground truth)", ""]
     for split in ("train", "val"):

@@ -19,7 +19,7 @@ LISTED = {
             "no_gloves", "no_boots", "forklift", "no_vest"],
     "mocs": ["Worker", "Excavator", "Bulldozer", "Loader", "Roller", "Crane", "Static crane",
              "Concrete mixer", "Pump truck", "Pile driving", "Truck", "Other vehicle", "Hanging head"],
-    "hrn": ["safety-harness", "head helmet"],
+    "hrn": ["head", "helmet", "safety-harness"],
     "scf": ["scaffold", "diagonal-brace", "ledger", "standard"],
 }
 
@@ -46,6 +46,11 @@ def test_mapping_targets_case_insensitive():
 def test_v1_sources_keep_v1_mapping():
     cmap = p2.class_map_for("hh", ["hardhat", "no-hardhat"])
     assert cmap == {0: 1, 1: 2}
+
+
+def test_hrn_head_is_no_helmet():
+    assert p2.class_map_for("hrn", ["head", "helmet", "safety-harness"]) == {
+        0: p2.CLS_IDX["no_helmet"], 1: p2.CLS_IDX["helmet"], 2: p2.CLS_IDX["harness"]}
 
 
 def test_unknown_class_exits():
