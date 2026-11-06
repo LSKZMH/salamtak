@@ -132,13 +132,13 @@ def _alert_item(a: alerts.Alert, requested: str) -> str:
             f"{html.escape(a.text)}{tail}</li>")
 
 
-def _alerts_html(hazards: tuple[Hazard, ...] | list[Hazard], lang: str) -> str:
+def _alerts_html(
+    hazards: tuple[Hazard, ...] | list[Hazard], lang: str, table: alerts.AlertTable | None = None
+) -> str:
+    """One alert per distinct hazard id. ``table`` defaults to the validated alerts.json."""
     if not hazards:
         return "<p>No hazards found.</p>"
-    unique: dict[str, alerts.Alert] = {}
-    for h in hazards:
-        unique.setdefault(h.id, alerts.alert_for(h.id, lang))
-    items = "".join(_alert_item(a, lang) for a in unique.values())
+    items = "".join(_alert_item(a, lang) for a in alerts.alerts_for(hazards, lang, table))
     return f"<section aria-label='Safety alerts' aria-live='polite'><ul class='ss-alerts'>{items}</ul></section>"
 
 
