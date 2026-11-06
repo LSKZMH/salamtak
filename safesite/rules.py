@@ -521,6 +521,22 @@ def no_fire_extinguisher(detections: Sequence[Detection]) -> list[Hazard]:
     ]
 
 
+def exposed_rebar(detections: Sequence[Detection]) -> list[Hazard]:
+    """Rebar seen with at least one worker present (impalement risk)."""
+    rebar = with_labels(detections, {REBAR})
+    workers = count_workers(detections)
+    if not rebar or workers < 1:
+        return []
+    noun = "worker" if workers == 1 else "workers"
+    return [
+        Hazard.of(
+            "exposed_rebar",
+            f"Exposed rebar seen with {workers} {noun} in the photo (impalement risk).",
+            _unique_boxes(rebar),
+        )
+    ]
+
+
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
@@ -586,5 +602,6 @@ def evaluate(detections: Sequence[Detection], context: SceneContext | None = Non
         *power_line_contact(dets, ratio),
         *hot_work_fire(dets, ratio),
         *no_fire_extinguisher(dets),
+        *exposed_rebar(dets),
     ]
     return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)

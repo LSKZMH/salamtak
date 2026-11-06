@@ -875,6 +875,39 @@ def test_no_extinguisher_once_per_photo():
 
 
 def test_fire_alone_costs_a_high_and_a_medium():
-    found = rules.evaluate([det("fire", FIRE, 0.6, )], INDOOR)
+    found = rules.evaluate([det("fire", FIRE, 0.6)], INDOOR)
     assert ids(found) == ["hot_work_fire", "no_fire_extinguisher"]
     assert safety_score(found) == 65
+
+
+# --- exposed_rebar ------------------------------------------------------------------------------
+REBAR = (0.10, 0.75, 0.40, 0.95)
+
+
+def test_exposed_rebar_flags_rebar_with_a_worker():
+    hazards = rules.exposed_rebar([det("rebar", REBAR), person()])
+    assert ids(hazards) == ["exposed_rebar"]
+    assert hazards[0].severity is Severity.MEDIUM
+    assert hazards[0].subject is None
+    assert hazards[0].reason == "Exposed rebar seen with 1 worker in the photo (impalement risk)."
+
+
+def test_exposed_rebar_clear_without_workers():
+    assert rules.exposed_rebar([det("rebar", REBAR)]) == []
+
+
+def test_exposed_rebar_counts_a_lone_helmet_head_as_a_worker():
+    scene = [det("rebar", REBAR), det("helmet", (0.70, 0.10, 0.75, 0.16))]
+    assert ids(rules.exposed_rebar(scene)) == ["exposed_rebar"]
+
+
+def test_exposed_rebar_once_per_photo():
+    scene = [det("rebar", REBAR), det("rebar", (0.50, 0.75, 0.80, 0.95)), person(), person((0.6, 0.3, 0.7, 0.7))]
+    hazards = rules.exposed_rebar(scene)
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 2
+    assert "2 workers" in hazards[0].reason
+
+
+def test_exposed_rebar_clear_without_rebar():
+    assert rules.exposed_rebar([person()]) == []
