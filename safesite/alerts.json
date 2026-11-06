@@ -1,0 +1,14 @@
+{
+  "_comment": "STUB from Chat 4: English only. Chat 3 drafts ar/hi/bn/ne/ur/ml with \"verified\": false until a native speaker confirms.",
+  "no_helmet": {"en": {"text": "Wear your helmet now.", "verified": true}},
+  "machinery_zone": {"en": {"text": "Step away from the machine now.", "verified": true}},
+  "fall_no_harness": {"en": {"text": "Clip on your harness before you climb.", "verified": true}},
+  "midday_ban": {"en": {"text": "Midday work ban: stop outdoor work and rest in the shade.", "verified": true}},
+  "wbgt_stop": {"en": {"text": "Too hot: stop work, drink water, rest in the shade.", "verified": true}},
+  "no_vest_near_vehicle": {"en": {"text": "Put on your hi-vis vest near vehicles.", "verified": true}},
+  "heat_welfare_gap": {"en": {"text": "Set up shade and cold water for the crew.", "verified": true}},
+  "trip_cord": {"en": {"text": "Move the cable off the walkway.", "verified": true}},
+  "home_trip": {"en": {"text": "Move the cord off the floor.", "verified": true}},
+  "home_slip": {"en": {"text": "Dry the wet floor now.", "verified": true}},
+  "home_child_reach": {"en": {"text": "Put it up high, out of children's reach.", "verified": true}}
+}

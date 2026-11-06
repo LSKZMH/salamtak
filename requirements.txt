@@ -1,0 +1,9 @@
+# Space runtime. gradio itself comes from sdk_version in README.md (6.31.0).
+# Pinned to the versions tested locally on 2026-11-06. CPU-only torch wheels keep the image small.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.15.0+cpu
+torchvision==0.29.2+cpu
+ultralytics==8.4.203
+huggingface_hub==2.4.0
+pillow>=10.1,<13
+numpy>=1.26,<3
