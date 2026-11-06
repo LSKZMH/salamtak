@@ -48,7 +48,7 @@ def fake_alerts() -> alerts.AlertTable:
 
 # ---------- handler ----------
 @pytest.mark.parametrize("name, mode, lang", [
-    ("site_summer_noon.jpg", "Site", "ar"), ("site_winter_morning.jpg", "Site", "en"), ("home_kitchen.jpg", "Home", "hi"),
+    ("site_summer_noon.jpg", "Site", "ar"), ("site_winter_morning.jpg", "Site", "en"), ("home_cords_floor.jpg", "Home", "hi"),
 ])
 def test_analyze_runs_end_to_end_on_examples(name, mode, lang):
     score_html, alert_html, annotated, table = app.analyze(Image.open(EXAMPLES / name), "", None, True, lang, mode)
