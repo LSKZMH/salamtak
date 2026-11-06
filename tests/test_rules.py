@@ -504,3 +504,65 @@ def test_v2_class_contract_extends_v1_without_reordering():
     assert EXTENDED_CLASSES == ("harness", "scaffold", "crane_hook", "utility_pole")
     assert MODEL_CLASSES_V2 == UNIFIED_CLASSES + EXTENDED_CLASSES
     assert MODEL_CLASSES_V2.index("utility_pole") == 10
+
+
+# --- v2 labels and confidence cut-offs ---------------------------------------------------
+def src(label: str, conf: float, source: str, box=(0.1, 0.1, 0.2, 0.2)) -> Detection:
+    return Detection(label, conf, box, source)
+
+
+V2_OPEN_VOCAB = (
+    "power_line", "welding", "fire", "gas_cylinder", "fire_extinguisher", "rebar",
+    "floor_opening", "trench", "crane_hook", "utility_pole",
+)
+
+
+@pytest.mark.parametrize("label", V2_OPEN_VOCAB)
+def test_v2_open_vocab_labels_are_registered(label):
+    assert label in rules.OPEN_VOCAB_LABELS
+
+
+@pytest.mark.parametrize(
+    ("source", "conf", "kept"),
+    [
+        ("yoloe", 0.30, True),  # open-vocab cut-off 0.25
+        ("yoloe", 0.20, False),
+        ("detector", 0.30, False),  # trained class: MIN_CONFIDENCE 0.35
+        ("detector", 0.36, True),
+        ("mock", 0.30, True),  # mock: fall back by label (harness is open-vocab)
+    ],
+)
+def test_harness_cutoff_follows_detection_source(source, conf, kept):
+    assert bool(rules.confident([src("harness", conf, source)])) is kept
+
+
+def test_open_vocab_only_label_from_default_source_keeps_open_vocab_cutoff():
+    # A "cord" can never come from the trained detector, so the label decides.
+    assert rules.confident([src("cord", 0.30, "detector")])
+
+
+def test_open_vocab_cutoffs_override_per_label(monkeypatch):
+    monkeypatch.setattr(rules, "OPEN_VOCAB_CUTOFFS", {"fire": 0.5})
+    assert not rules.confident([src("fire", 0.45, "yoloe")])
+    assert rules.confident([src("fire", 0.55, "yoloe")])
+    assert rules.confident([src("rebar", 0.30, "yoloe")])  # unlisted: default 0.25
+
+
+def test_open_vocab_cutoffs_are_never_used_for_trained_detector_output(monkeypatch):
+    monkeypatch.setattr(rules, "OPEN_VOCAB_CUTOFFS", {"scaffold": 0.9})
+    assert rules.confident([src("scaffold", 0.40, "detector")])
+
+
+@pytest.mark.parametrize(
+    ("label", "name"),
+    [
+        ("crane_hook", "crane hook"),
+        ("utility_pole", "power pole"),
+        ("power_line", "power line"),
+        ("gas_cylinder", "gas cylinder"),
+        ("fire_extinguisher", "fire extinguisher"),
+        ("floor_opening", "floor opening"),
+    ],
+)
+def test_v2_display_names(label, name):
+    assert rules.DISPLAY_NAME[label] == name

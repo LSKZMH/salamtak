@@ -12,11 +12,14 @@ from collections import Counter
 from collections.abc import Collection, Sequence
 
 from safesite import heat
-from safesite.types import Box, Detection, Hazard, Mode, SceneContext, Severity
+from safesite.types import MODEL_CLASSES_V2, Box, Detection, Hazard, Mode, SceneContext, Severity
 
 # --- Thresholds ---------------------------------------------------------------
 MIN_CONFIDENCE = 0.35  # cut-off for the trained detector (YOLO26s)
 OPEN_VOCAB_MIN_CONFIDENCE = 0.25  # cut-off for the open-vocabulary finder (YOLOE-26)
+# Per-label YOLOE cut-offs (unlisted labels use OPEN_VOCAB_MIN_CONFIDENCE).
+# Copy recommended values here from Chat 9's docs/prompt_bench.md.
+OPEN_VOCAB_CUTOFFS: dict[str, float] = {}
 HEAD_REGION_FRACTION = 0.25  # top quarter of a person box is their head region
 MACHINERY_ZONE_FACTOR = 0.5  # danger zone: within 0.5 x person height of machinery/vehicle
 FALL_ZONE_FACTOR = 0.25  # "near" a scaffold/ladder: within 0.25 x person height
@@ -33,23 +36,54 @@ WET_FLOOR, KNIFE, CHEMICALS = "wet_floor", "knife", "chemicals"
 EXTENSION_CORD, CLEANING_CHEMICALS = "extension_cord", "cleaning_chemicals"
 CORD_LABELS = frozenset({CORD, EXTENSION_CORD})
 CHILD_REACH_LABELS = frozenset({KNIFE, CHEMICALS, CLEANING_CHEMICALS})
+# v2 labels: crane_hook and utility_pole come from the trained detector and YOLOE;
+# the rest only from YOLOE prompts (see the label contract in PLAN-v2.md).
+CRANE_HOOK, UTILITY_POLE, POWER_LINE = "crane_hook", "utility_pole", "power_line"
+WELDING, FIRE, GAS_CYLINDER = "welding", "fire", "gas_cylinder"
+FIRE_EXTINGUISHER, REBAR = "fire_extinguisher", "rebar"
+FLOOR_OPENING, TRENCH = "floor_opening", "trench"
 
 OPEN_VOCAB_LABELS = frozenset(
     {HARNESS, SCAFFOLD, LADDER, SHADE_TENT, WATER_COOLER, HOSE, WET_FLOOR}
     | CORD_LABELS
     | CHILD_REACH_LABELS
+    | {CRANE_HOOK, UTILITY_POLE, POWER_LINE, WELDING, FIRE, GAS_CYLINDER}
+    | {FIRE_EXTINGUISHER, REBAR, FLOOR_OPENING, TRENCH}
 )
-DISPLAY_NAME = {MACHINERY: "machine", NO_HELMET: "bare head", WET_FLOOR: "wet floor"}
+TRAINED_LABELS = frozenset(MODEL_CLASSES_V2)  # what the trained detector (v1 or v2) can output
+YOLOE_SOURCE, DETECTOR_SOURCE = "yoloe", "detector"  # Detection.source values
+DISPLAY_NAME = {
+    MACHINERY: "machine",
+    NO_HELMET: "bare head",
+    WET_FLOOR: "wet floor",
+    CRANE_HOOK: "crane hook",
+    UTILITY_POLE: "power pole",
+    POWER_LINE: "power line",
+    GAS_CYLINDER: "gas cylinder",
+    FIRE_EXTINGUISHER: "fire extinguisher",
+    FLOOR_OPENING: "floor opening",
+}
 IRREGULAR_PLURALS = {"knife": "knives"}  # display name -> plural, for reason strings
 
 
 # --- Geometry and filtering helpers -------------------------------------------
-def confidence_cutoff(label: str) -> float:
-    return OPEN_VOCAB_MIN_CONFIDENCE if label in OPEN_VOCAB_LABELS else MIN_CONFIDENCE
+def _open_vocab_cutoff(label: str) -> float:
+    return OPEN_VOCAB_CUTOFFS.get(label, OPEN_VOCAB_MIN_CONFIDENCE)
+
+
+def confidence_cutoff(detection: Detection) -> float:
+    """YOLOE output -> its per-label open-vocab cut-off; trained-detector output of a
+    trained class -> MIN_CONFIDENCE; anything else (mocks, hand-built detections) by label."""
+    label = detection.label
+    if detection.source == YOLOE_SOURCE:
+        return _open_vocab_cutoff(label)
+    if detection.source == DETECTOR_SOURCE and label in TRAINED_LABELS:
+        return MIN_CONFIDENCE
+    return _open_vocab_cutoff(label) if label in OPEN_VOCAB_LABELS else MIN_CONFIDENCE
 
 
 def confident(detections: Sequence[Detection]) -> list[Detection]:
-    return [d for d in detections if d.confidence >= confidence_cutoff(d.label)]
+    return [d for d in detections if d.confidence >= confidence_cutoff(d)]
 
 
 def with_labels(detections: Sequence[Detection], labels: Collection[str]) -> list[Detection]:
