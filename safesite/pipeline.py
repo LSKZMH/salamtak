@@ -16,7 +16,29 @@ from safesite.heat import WBGT_STOP_WORK_C as WBGT_STOP_C
 from safesite.types import Detection, Hazard, Mode, SceneContext
 
 WORKER_LABELS = frozenset({"person", "helmet", "no_helmet", "vest", "no_vest"})
-EQUIPMENT_LABELS = frozenset({"machinery", "vehicle"})
+EQUIPMENT_LABELS = frozenset({"machinery", "vehicle", "crane_hook", "utility_pole"})
+
+# Hazard id -> alternative label sets; the rule can be judged when every label of at least one
+# set can be produced (label contract in PLAN-v2.md / rules.py). A hazard no loaded model can
+# judge is listed as "not checked" instead of letting the photo look safe. Order = display order.
+HAZARD_INPUTS: dict[str, tuple[frozenset[str], ...]] = {
+    "under_suspended_load": (frozenset({"crane_hook"}),),
+    "power_line_contact": (frozenset({"utility_pole", "machinery"}), frozenset({"power_line", "machinery"})),
+    "hot_work_fire": (frozenset({"fire"}), frozenset({"welding", "gas_cylinder"})),
+    # "no extinguisher in the photo" means nothing unless extinguishers can be detected
+    "no_fire_extinguisher": (frozenset({"fire", "fire_extinguisher"}),
+                             frozenset({"welding", "fire_extinguisher"})),
+    "exposed_rebar": (frozenset({"rebar"}),),
+    "fall_into_opening": (frozenset({"floor_opening"}), frozenset({"trench"})),
+    # "no harness seen" likewise means nothing unless harnesses can be detected
+    "fall_no_harness": (frozenset({"scaffold", "harness"}), frozenset({"ladder", "harness"})),
+}
+
+
+def unchecked_hazards(producible: frozenset[str] | set[str]) -> tuple[str, ...]:
+    """Hazard ids no loaded model can judge: no alternative label set is fully producible."""
+    return tuple(h for h, options in HAZARD_INPUTS.items()
+                 if not any(needs <= producible for needs in options))
 
 MAX_SIDE = 1280  # downscale before detect/annotate: ~10 s -> ~0.2 s per 12 MP photo on CPU
 MAX_INPUT_PIXELS = 50_000_000  # refuse anything bigger (decompression-bomb guard)
@@ -64,9 +86,11 @@ def _notes(dets: Sequence[Detection], ignored: int, context: SceneContext, detec
         notes.append(f"WBGT {context.wbgt_c:.1f} °C is above the {WBGT_STOP_C} °C stop-work limit.")
     if ignored:
         notes.append(f"{ignored} low-confidence detection(s) ignored.")
-    pending = getattr(rules, "NOT_IMPLEMENTED", ())
+    producible = getattr(detector, "labels", None)  # detectors that declare what they can see
+    pending = unchecked_hazards(producible) if producible is not None else ()
     if context.mode == "site" and pending:
-        notes.append("Not checked yet: " + ", ".join(p.replace("_", " ") for p in pending) + ".")
+        notes.append("Not checked with the current models: "
+                     + ", ".join(p.replace("_", " ") for p in pending) + ".")
     return assessed, notes
 
 

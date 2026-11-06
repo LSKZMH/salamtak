@@ -22,7 +22,20 @@ def test_site_prompts_cover_the_requested_objects():
     assert set(SITE_PROMPTS) == {
         "safety harness", "scaffolding", "ladder", "shade tent",
         "water cooler", "extension cord", "cable on the floor", "hose",
+        # v2: only prompts that passed docs/prompt_bench.md
+        "power pole", "exposed rebar", "steel reinforcement bars sticking up",
     }
+
+
+def test_v2_prompts_map_to_the_rule_labels_they_feed():
+    assert SITE_PROMPTS["power pole"] == "utility_pole"  # power_line_contact
+    assert SITE_PROMPTS["exposed rebar"] == SITE_PROMPTS["steel reinforcement bars sticking up"] == "rebar"
+
+
+def test_prompts_that_failed_or_were_held_back_do_not_ship():
+    labels = set(SITE_PROMPTS.values())
+    assert not labels & {"power_line", "crane_hook", "welding", "fire", "gas_cylinder",
+                         "fire_extinguisher", "floor_opening", "trench"}
 
 
 def test_home_prompts_cover_the_requested_objects():
@@ -124,6 +137,7 @@ class FakeYOLOE:
 
     def predict(self, image, **kwargs):
         self.predict_kwargs = kwargs
+        self.predict_calls = getattr(self, "predict_calls", 0) + 1
         boxes = SimpleNamespace(
             xyxyn=FakeTensor([[0.1, 0.7, 0.9, 0.95]]), conf=FakeTensor([0.6]), cls=FakeTensor([0.0])
         )
@@ -170,6 +184,18 @@ def test_detector_runs_on_cpu_with_its_threshold(image):
     assert fake.predict_kwargs["device"] == "cpu"
     assert fake.predict_kwargs["conf"] == 0.2
     assert fake.predict_kwargs["imgsz"] == 480
+
+
+def test_detector_warms_up_once_at_start_so_the_first_photo_is_not_slow():
+    fake = FakeYOLOE()
+    OpenVocabDetector(model=fake)
+    assert fake.predict_calls == 1
+    assert fake.predict_kwargs["device"] == "cpu"
+
+
+def test_detector_declares_the_site_labels_it_can_produce():
+    # pipeline.unchecked_hazards reads this to say which hazards no model can see
+    assert OpenVocabDetector(model=FakeYOLOE()).labels == frozenset(SITE_PROMPTS.values())
 
 
 def test_default_weights_are_the_smallest_yoloe26():

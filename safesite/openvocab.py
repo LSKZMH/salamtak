@@ -45,6 +45,10 @@ SITE_PROMPTS: Mapping[str, str] = {
     "extension cord": "cord",
     "cable on the floor": "cord",  # finds real floor cords that "extension cord" misses
     "hose": "hose",
+    # v2: only prompts that passed docs/prompt_bench.md (cut-offs live in rules.OPEN_VOCAB_CUTOFFS)
+    "power pole": "utility_pole",  # -> power_line_contact
+    "exposed rebar": "rebar",  # -> exposed_rebar
+    "steel reinforcement bars sticking up": "rebar",
 }
 HOME_PROMPTS: Mapping[str, str] = {
     "extension cord": "cord",
@@ -139,6 +143,11 @@ class OpenVocabDetector:
         self._lock = threading.Lock()
         self._activate("site")
         self.name = f"YOLOE-26 open-vocab ({os.path.basename(weights)})"
+        # Site labels this finder can produce (pipeline's "not checked" note is Site-only).
+        self.labels = frozenset(SITE_PROMPTS.values())
+        # Warm-up at boot: the first real predict is ~5 s slower than the rest on CPU.
+        self._model.predict(Image.new("RGB", (imgsz, imgsz)), conf=conf, imgsz=imgsz,
+                            device="cpu", verbose=False)
 
     def _activate(self, key: str) -> None:
         if key == self._active:

@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from safesite import detect
-from safesite.types import UNIFIED_CLASSES, Detection
+from safesite.types import EXTENDED_CLASSES, MODEL_CLASSES_V2, UNIFIED_CLASSES, Detection
 
 WEIGHTS = os.environ.get("SAFESITE_TEST_WEIGHTS", "")
 needs_yolo = pytest.mark.skipif(
@@ -29,11 +29,28 @@ def test_env_treats_blank_space_variables_as_unset(monkeypatch, value, expected)
     assert detect._env("SAFESITE_TEST_VAR", "dflt") == expected
 
 
-def test_check_labels_accepts_exact_unified_classes():
-    detect.check_labels(set(UNIFIED_CLASSES))
+@pytest.mark.parametrize("classes", [UNIFIED_CLASSES, MODEL_CLASSES_V2], ids=["v1", "v2"])
+def test_check_labels_accepts_v1_and_v2_class_lists(classes):
+    assert detect.check_labels(list(classes)) == tuple(classes)
 
 
-@pytest.mark.parametrize("names", [{"hardhat", "no-hardhat", "person"}, set(UNIFIED_CLASSES) | {"dog"}])
+def test_check_labels_accepts_ultralytics_names_dict():
+    # model.names is {id: name}; order comes from the ids, not dict insertion order
+    names = {i: n for i, n in reversed(list(enumerate(MODEL_CLASSES_V2)))}
+    assert detect.check_labels(names) == MODEL_CLASSES_V2
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ["hardhat", "no-hardhat", "person"],                      # stock / foreign classes
+        [*UNIFIED_CLASSES, "dog"],                                # unknown extra class
+        [*MODEL_CLASSES_V2, "dog"],                               # unknown extra after v2
+        [UNIFIED_CLASSES[1], UNIFIED_CLASSES[0], *UNIFIED_CLASSES[2:]],  # right names, wrong order
+        [*UNIFIED_CLASSES, *EXTENDED_CLASSES[:2]],                # partial v2
+    ],
+    ids=["foreign", "v1+extra", "v2+extra", "wrong-order", "partial-v2"],
+)
 def test_check_labels_rejects_mismatched_classes(names):
     with pytest.raises(detect.LabelMismatchError):
         detect.check_labels(names)
@@ -79,6 +96,23 @@ def test_combined_tolerates_finder_without_contract_attributes():
 
     combined = detect.CombinedDetector(_Fake("person", "P"), Bare())
     assert combined.is_mock is False and combined.supports_home
+
+
+def test_combined_detector_labels_are_the_union_when_both_parts_declare_them():
+    primary, finder = _Fake("person", "P"), _Fake("harness", "F")
+    primary.labels, finder.labels = frozenset(UNIFIED_CLASSES), frozenset({"harness", "rebar"})
+    assert detect.CombinedDetector(primary, finder).labels == frozenset(UNIFIED_CLASSES) | {"harness", "rebar"}
+
+
+def test_combined_detector_has_no_labels_when_a_part_does_not_declare_them():
+    primary = _Fake("person", "P")
+    primary.labels = frozenset(UNIFIED_CLASSES)
+    assert getattr(detect.CombinedDetector(primary, _Fake("harness", "F")), "labels", None) is None
+
+
+def test_mock_detector_declares_its_site_labels():
+    # so the mock (default, and fallback when YOLO fails) still shows the "not checked" note
+    assert detect.MockDetector().labels == frozenset(d.label for d in detect.MOCK_SITE)
 
 
 def test_mock_boxes_are_normalized():
