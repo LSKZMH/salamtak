@@ -476,3 +476,31 @@ def test_hazard_rejects_multiline_reason():
 
 def test_severity_prints_as_its_label():
     assert str(Severity.HIGH) == "High"
+
+
+# --- v2 contract ----------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("hazard_id", "severity"),
+    [
+        ("worker_down", Severity.HIGH),
+        ("under_suspended_load", Severity.HIGH),
+        ("power_line_contact", Severity.HIGH),
+        ("hot_work_fire", Severity.HIGH),
+        ("fall_into_opening", Severity.HIGH),
+        ("no_fire_extinguisher", Severity.MEDIUM),
+        ("exposed_rebar", Severity.MEDIUM),
+    ],
+)
+def test_v2_hazard_ids_have_their_severity(hazard_id, severity):
+    assert Hazard.of(hazard_id, "test reason").severity is severity
+
+
+def test_v2_class_contract_extends_v1_without_reordering():
+    from safesite.types import EXTENDED_CLASSES, MODEL_CLASSES_V2, UNIFIED_CLASSES
+
+    assert UNIFIED_CLASSES == (
+        "person", "helmet", "no_helmet", "vest", "no_vest", "machinery", "vehicle"
+    )
+    assert EXTENDED_CLASSES == ("harness", "scaffold", "crane_hook", "utility_pole")
+    assert MODEL_CLASSES_V2 == UNIFIED_CLASSES + EXTENDED_CLASSES
+    assert MODEL_CLASSES_V2.index("utility_pole") == 10
