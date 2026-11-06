@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
 
-from safesite.types import UNIFIED_CLASSES, Detection, Mode
+from safesite.types import MODEL_CLASSES_V2, UNIFIED_CLASSES, Detection, Mode
 
 def _env(name: str, default: str | None = None) -> str | None:
     """A Space variable can exist but be blank; treat that as unset (a "" revision would 404)."""
@@ -67,15 +68,25 @@ class MockDetector:
 
 # ---------- real YOLO26 ----------
 class LabelMismatchError(RuntimeError):
-    """The weights' class names don't match UNIFIED_CLASSES, so every rule would silently miss."""
+    """The weights' classes aren't the v1 or v2 contract, so rules would silently miss."""
 
 
-def check_labels(names: set[str]) -> None:
-    missing, extra = set(UNIFIED_CLASSES) - names, names - set(UNIFIED_CLASSES)
-    if missing or extra:
-        raise LabelMismatchError(
-            f"model classes don't match the rules: missing {sorted(missing)}, unexpected {sorted(extra)[:10]}"
-        )
+ACCEPTED_CLASS_LISTS: tuple[tuple[str, ...], ...] = (UNIFIED_CLASSES, MODEL_CLASSES_V2)  # v1, v2
+
+
+def check_labels(names: Mapping[int, str] | Sequence[str]) -> tuple[str, ...]:
+    """Validate a model's classes in id order (``model.names`` dict or a list).
+
+    Accepts exactly UNIFIED_CLASSES (v1, 7 classes) or MODEL_CLASSES_V2 (v2, 11 classes);
+    returns them as a tuple. Wrong order, unknown or missing classes raise LabelMismatchError.
+    """
+    ordered = tuple(names[i] for i in sorted(names)) if isinstance(names, Mapping) else tuple(names)
+    if ordered in ACCEPTED_CLASS_LISTS:
+        return ordered
+    raise LabelMismatchError(
+        f"model classes {list(ordered)[:12]} are neither v1 {list(UNIFIED_CLASSES)} nor v2 "
+        f"{list(MODEL_CLASSES_V2)}; unexpected {sorted(set(ordered) - set(MODEL_CLASSES_V2))[:10]}"
+    )
 
 
 class YoloDetector:
@@ -108,8 +119,9 @@ class YoloDetector:
         self._model = YOLO(weights_path)
         names = set(self._model.names.values())
         if strict_labels:
-            check_labels(names)
+            check_labels(self._model.names)  # v1 (7) or v2 (11) classes, in id order
         self._known = names
+        self.labels = frozenset(names)  # what this model can produce (pipeline's "not checked" note)
         self.name = f"YOLO26 ({source})"
         self._predict(np.zeros((IMG_SIZE, IMG_SIZE, 3), dtype=np.uint8))  # warm-up: first call is slow
         log.info("loaded %s: %d classes, imgsz=%d, threads=%d", self.name, len(names), IMG_SIZE,
@@ -148,6 +160,10 @@ class CombinedDetector:
         self.name = f"{primary.name} + {open_vocab.name}"
         # getattr: works whether or not the finder declares the contract attributes (chat-5 adds them)
         self.is_mock = bool(getattr(primary, "is_mock", False) or getattr(open_vocab, "is_mock", False))
+        # Labels either part can produce; only declared when both parts declare theirs.
+        parts = (getattr(primary, "labels", None), getattr(open_vocab, "labels", None))
+        if all(p is not None for p in parts):
+            self.labels = frozenset().union(*parts)
 
     def __call__(self, image: Image.Image, mode: Mode = "site") -> list[Detection]:
         found = self._open_vocab(image, mode)

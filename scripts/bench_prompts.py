@@ -189,8 +189,17 @@ def sweep(label: str, phrasings: Sequence[str], scores: Scores,
 
 # ---------- report ----------
 
-def _table(label: str, points: Mapping[tuple[str, ...], OperatingPoint], best: OperatingPoint) -> list[str]:
-    lines = [f"### `{label}` — {'**shipped**' if best.ships else 'not shipped'}", "",
+def _verdict(best: OperatingPoint, existing: bool) -> str:
+    if existing:  # already in SITE_PROMPTS: this is a false-alarm re-check, not a ship decision
+        return f"already shipped; FP rate {best.fp_rate:.2f} at {best.threshold:.2f}"
+    if best.n_pos == 0:
+        return "not benched (no positive photos)"
+    return "**shipped**" if best.ships else "not shipped"
+
+
+def _table(label: str, points: Mapping[tuple[str, ...], OperatingPoint], best: OperatingPoint,
+           existing: bool = False) -> list[str]:
+    lines = [f"### `{label}` — {_verdict(best, existing)}", "",
              "| phrasing | best thr | hit rate | FP rate | FP neg | n pos / other | ships |",
              "|---|---|---|---|---|---|---|"]
     for cand, p in points.items():
@@ -215,14 +224,15 @@ def report(scores: Scores, truth: Mapping[str, frozenset[str]], weights: str, im
         "",
     ]
     shipped: dict[str, OperatingPoint] = {}
-    for title, table in (("New labels", NEW_PHRASINGS), ("Existing prompts (re-check)", EXISTING_PHRASINGS)):
+    for title, table, existing in (("New labels", NEW_PHRASINGS, False),
+                                   ("Existing prompts (false-alarm re-check)", EXISTING_PHRASINGS, True)):
         lines += [f"## {title}", ""]
         for label, phrasings in table.items():
             points = sweep(label, phrasings, scores, truth)
             best = best_point(list(points.values()))
-            if best.ships:
+            if best.ships and not existing:
                 shipped[label] = best
-            lines += _table(label, points, best)
+            lines += _table(label, points, best, existing)
     lines += ["## Recommended `OPEN_VOCAB_CUTOFFS` (for Chat 8's `rules.py`)", "",
               "| label | prompts | cut-off | hit rate | FP rate |", "|---|---|---|---|---|"]
     for label, p in shipped.items():

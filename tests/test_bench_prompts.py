@@ -106,7 +106,18 @@ def test_report_lists_shipped_label_in_cutoffs_table() -> None:
     text = bench.report(scores, TRUTH, "yoloe-26n-seg.pt", 640)
     assert "### `fire` — **shipped**" in text
     assert "| `fire` | 'fire' | 0.55 |" in text
-    assert "### `rebar` — not shipped" in text
+    assert "### `rebar` — not benched (no positive photos)" in text  # TRUTH has no rebar photos
+    assert "### `harness` — already shipped; FP rate" in text  # existing prompts are re-checks
+
+
+def test_report_marks_benched_label_that_fails_as_not_shipped() -> None:
+    truth = {**TRUTH, "w1": frozenset({"welding"})}
+    scores = {k: {p: 0.0 for p in bench.all_prompts()} for k in truth}
+    scores["n1"]["welding sparks"] = scores["n2"]["welding sparks"] = 0.9  # fires on negatives too
+    scores["o1"]["welding sparks"] = scores["w1"]["welding sparks"] = 0.9
+    text = bench.report(scores, truth, "yoloe-26n-seg.pt", 640)
+    assert "### `welding` — not shipped" in text
+    assert "| `welding` |" not in text
 
 
 def test_all_prompts_has_no_duplicates_and_includes_existing() -> None:
