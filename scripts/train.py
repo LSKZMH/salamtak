@@ -41,8 +41,8 @@ from pathlib import Path
 from huggingface_hub import HfApi, snapshot_download
 
 CLASS_NAMES = ["person", "helmet", "no_helmet", "vest", "no_vest", "machinery", "vehicle"]
-DEFAULT_DATASET_REPO = "plitip/team-alloy-safesite-data"
-DEFAULT_MODEL_REPO = "plitip/team-alloy-safesite"
+DEFAULT_DATASET_REPO = "plitip/team-qh-091-safesite-data"
+DEFAULT_MODEL_REPO = "plitip/team-qh-091-safesite"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 SUBSET_SEED = 0
 MODEL_SIZES = ("n", "s", "m", "l", "x")
