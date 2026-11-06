@@ -10,14 +10,15 @@ Before the demo, pin the weights: set the Space variable SAFESITE_MODEL_REVISION
 repo's commit SHA (rollback = set it to the previous SHA). Only load weights from our own repo:
 a .pt file is a pickle and runs code when loaded.
 
-YOLOE-26 (open-vocabulary prompts: harness, scaffold, ladder, ...) is added later (Chat 5) as a
-second detector whose prompt labels are concatenated with YOLO26's output (source="yoloe").
+YOLOE-26 (open-vocabulary prompts: harness, scaffold, ladder, ...) lives in safesite/openvocab.py;
+CombinedDetector concatenates it with the trained detector in Site mode and uses it alone in Home mode.
 """
 from __future__ import annotations
 
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
 
@@ -127,3 +128,24 @@ class YoloDetector:
                 boxes.xyxyn.tolist(), boxes.conf.tolist(), boxes.cls.tolist()
             )
         ]
+
+
+# ---------- trained detector + YOLOE open-vocab finder ----------
+class CombinedDetector:
+    """Site: the trained detector's boxes followed by the open-vocab finder's. Home: the finder only,
+    because the trained classes (person, helmet, vest, ...) carry no home hazards."""
+
+    supports_home = True
+
+    def __init__(self, primary: Any, open_vocab: Any) -> None:
+        self._primary = primary
+        self._open_vocab = open_vocab
+        self.name = f"{primary.name} + {open_vocab.name}"
+        # getattr: works whether or not the finder declares the contract attributes (chat-5 adds them)
+        self.is_mock = bool(getattr(primary, "is_mock", False) or getattr(open_vocab, "is_mock", False))
+
+    def __call__(self, image: Image.Image, mode: Mode = "site") -> list[Detection]:
+        found = self._open_vocab(image, mode)
+        if str(getattr(mode, "value", mode)).lower() == "home":
+            return list(found)
+        return [*self._primary(image, mode), *found]

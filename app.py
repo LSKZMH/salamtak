@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import logging
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -15,7 +16,7 @@ from pathlib import Path
 import gradio as gr
 from PIL import Image
 
-from safesite import alerts, detect
+from safesite import alerts, detect, openvocab
 from safesite.annotate import annotate
 from safesite.pipeline import Analysis, ImageTooLargeError, analyze_image
 from safesite.types import Hazard, SceneContext
@@ -33,7 +34,11 @@ LANGUAGES: dict[str, str] = {
 RTL_LANGUAGES = frozenset({"ar", "ur"})
 
 # ---- The one line to change when the trained model is on the Hub: ----
-DETECTOR = detect.MockDetector()  # -> detect.YoloDetector()
+PRIMARY = detect.MockDetector()  # -> detect.YoloDetector()
+# YOLOE-26 open-vocab finder (harness, scaffold, cords, ...; all of Home mode). Set the Space
+# variable SAFESITE_OPEN_VOCAB=0 to switch it off (tests do, so they never load the model).
+OPEN_VOCAB = os.environ.get("SAFESITE_OPEN_VOCAB", "1") != "0"
+DETECTOR = detect.CombinedDetector(PRIMARY, openvocab.OpenVocabDetector()) if OPEN_VOCAB else PRIMARY
 
 log = logging.getLogger("safesite")
 logging.basicConfig(level=logging.INFO)
@@ -193,7 +198,10 @@ def build_ui() -> gr.Blocks:
             "Includes Qatar's midday summer work ban and the WBGT stop-work rule. No LLM in the loop.  \n"
             f"*{DISCLAIMER}*"
         )
-        if DETECTOR.is_mock:
+        if PRIMARY.is_mock and OPEN_VOCAB:
+            gr.Markdown("> **Demo mode:** people, helmets, vests and vehicles are fixed fake boxes from a mock "
+                        "detector. Harness, scaffold, ladder, shade, water, cord and all Home-mode finds are real.")
+        elif DETECTOR.is_mock:
             gr.Markdown("> **Demo mode:** the detector is a mock that returns fixed fake boxes for every photo.")
         with gr.Row():
             with gr.Column(scale=1):
