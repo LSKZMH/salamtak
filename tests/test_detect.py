@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from safesite import detect
-from safesite.types import UNIFIED_CLASSES
+from safesite.types import UNIFIED_CLASSES, Detection
 
 WEIGHTS = os.environ.get("SAFESITE_TEST_WEIGHTS", "")
 needs_yolo = pytest.mark.skipif(
@@ -27,6 +27,48 @@ def test_check_labels_accepts_exact_unified_classes():
 def test_check_labels_rejects_mismatched_classes(names):
     with pytest.raises(detect.LabelMismatchError):
         detect.check_labels(names)
+
+
+class _Fake:
+    """Detector stub returning one fixed detection, recording the modes it was called with."""
+
+    def __init__(self, label, name, is_mock=False, supports_home=False):
+        self.label, self.name, self.is_mock, self.supports_home = label, name, is_mock, supports_home
+        self.modes: list[str] = []
+
+    def __call__(self, image, mode="site"):
+        self.modes.append(mode)
+        return [Detection(self.label, 0.9, (0.1, 0.1, 0.2, 0.2), "test")]
+
+
+def test_combined_site_mode_concatenates_both_detectors():
+    primary, finder = _Fake("person", "P"), _Fake("scaffold", "F", supports_home=True)
+    found = detect.CombinedDetector(primary, finder)(Image.new("RGB", (8, 8)), "site")
+    assert [d.label for d in found] == ["person", "scaffold"]
+
+
+def test_combined_home_mode_uses_only_the_open_vocab_finder():
+    primary, finder = _Fake("helmet", "P", supports_home=True), _Fake("knife", "F", supports_home=True)
+    found = detect.CombinedDetector(primary, finder)(Image.new("RGB", (8, 8)), "home")
+    assert [d.label for d in found] == ["knife"]
+    assert primary.modes == []  # trained classes carry no home hazards, so it is not run
+
+
+def test_combined_reports_name_mock_and_home_support():
+    combined = detect.CombinedDetector(_Fake("person", "MOCK", is_mock=True), _Fake("cord", "YOLOE"))
+    assert combined.name == "MOCK + YOLOE"
+    assert combined.is_mock and combined.supports_home
+
+
+def test_combined_tolerates_finder_without_contract_attributes():
+    class Bare:
+        name = "bare"
+
+        def __call__(self, image, mode="site"):
+            return []
+
+    combined = detect.CombinedDetector(_Fake("person", "P"), Bare())
+    assert combined.is_mock is False and combined.supports_home
 
 
 def test_mock_boxes_are_normalized():

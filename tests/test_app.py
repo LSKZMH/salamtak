@@ -1,5 +1,5 @@
 """App-level tests: Gradio handler, time resolution, alert/score rendering, annotation.
-Rule-by-rule tests: tests/test_rules_stub.py (stub) and tests/test_rules.py (Chat 3)."""
+Rule-by-rule tests live in tests/test_rules.py (Chat 3)."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -35,13 +35,15 @@ def _exif_jpeg(tmp_path: Path, stamp: str, tag: int = app.EXIF_DATETIME_ORIGINAL
 
 
 @pytest.fixture
-def fake_alerts(monkeypatch):
-    data = {
-        "no_helmet": {"en": {"text": "Wear <b>helmet</b>", "verified": True}, "ar": "ارتدِ الخوذة"},
+def fake_alerts() -> alerts.AlertTable:
+    """A small parsed table, passed via table= so tests never depend on alerts.json contents."""
+    return alerts.parse_alerts({
+        "no_helmet": {
+            "en": {"text": "Wear <b>helmet</b>", "verified": True},
+            "ar": {"text": "ارتدِ الخوذة", "verified": False},
+        },
         "machinery_zone": {"en": {"text": "Step away", "verified": True}},
-    }
-    monkeypatch.setattr(alerts, "_load", lambda: data)
-    return data
+    })
 
 
 # ---------- handler ----------
@@ -113,19 +115,26 @@ def test_bad_override_raises_friendly_error():
 
 # ---------- alerts rendering ----------
 def test_alerts_are_escaped_and_tagged_with_language(fake_alerts):
-    html_out = app._alerts_html([Hazard.of("no_helmet", "r"), Hazard.of("no_helmet", "r2")], "en")
+    hazards = [Hazard.of("no_helmet", "r"), Hazard.of("no_helmet", "r2")]
+    html_out = app._alerts_html(hazards, "en", table=fake_alerts)
     assert "&lt;b&gt;helmet&lt;/b&gt;" in html_out and "<b>" not in html_out
     assert html_out.count("<li") == 1  # same id twice -> one alert
 
 
-def test_rtl_plain_string_translation_is_marked_unverified(fake_alerts):
-    html_out = app._alerts_html([Hazard.of("no_helmet", "r")], "ar")
+def test_rtl_unverified_translation_is_marked(fake_alerts):
+    html_out = app._alerts_html([Hazard.of("no_helmet", "r")], "ar", table=fake_alerts)
     assert "lang='ar' dir='rtl'" in html_out and "unverified translation" in html_out
 
 
-def test_missing_translation_and_missing_phrase_are_flagged(fake_alerts):
-    html_out = app._alerts_html([Hazard.of("machinery_zone", "r"), Hazard.of("trip_cord", "r")], "hi")
-    assert "English: no translation yet" in html_out and "no alert text yet" in html_out
+def test_missing_translation_falls_back_to_english_with_note(fake_alerts):
+    # A missing hazard id can't happen: alerts.load_alerts() guarantees every id at boot.
+    html_out = app._alerts_html([Hazard.of("machinery_zone", "r")], "hi", table=fake_alerts)
+    assert "lang='en' dir='ltr'" in html_out and "English: no translation yet" in html_out
+
+
+def test_real_alerts_json_covers_every_rendered_hazard():
+    html_out = app._alerts_html([Hazard.of("no_helmet", "r"), Hazard.of("heat_welfare_gap", "r")], "ar")
+    assert html_out.count("<li") == 2
 
 
 def test_no_hazards_message():
