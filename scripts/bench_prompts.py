@@ -64,6 +64,18 @@ THRESHOLDS: tuple[float, ...] = tuple(round(0.15 + 0.05 * i, 2) for i in range(1
 SCORE_FLOOR = 0.10  # collect everything above this once; thresholds are applied afterwards
 MIN_HIT_RATE = 0.6
 MAX_FP_RATE = 0.10
+# Extra ship conditions (see docs/prompt_bench.md):
+#  - the app sees construction-site photos, so plain site photos must not false-alarm either;
+#  - a cut-off at YOLOE's own reporting floor (openvocab.CONF_THRESHOLD) rests on scores the
+#    model barely reports and that move when the prompt set changes, so it must sit above it.
+SITE_NEG_PREFIX = "neg/neg_site_"
+YOLOE_FLOOR = openvocab.CONF_THRESHOLD
+# Labels that pass the bench but stay out, because every rule they feed is unjudgeable today.
+HELD_BACK: Mapping[str, str] = {
+    "welding": "its only reachable rule is no_fire_extinguisher (hot_work_fire also needs a "
+               "gas cylinder, which did not pass) and that rule cannot be judged without a "
+               "working fire-extinguisher prompt, so it would flag every welding photo",
+}
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
 SCORES_FILE = "scores.json"
 
@@ -81,10 +93,12 @@ class OperatingPoint:
     n_pos: int
     n_other: int
     n_neg: int
+    fp_rate_site: float = 0.0  # plain construction-site negatives only
 
     @property
     def ships(self) -> bool:
-        return self.n_pos > 0 and self.hit_rate >= MIN_HIT_RATE and self.fp_rate <= MAX_FP_RATE
+        return (self.n_pos > 0 and self.hit_rate >= MIN_HIT_RATE and self.fp_rate <= MAX_FP_RATE
+                and self.fp_rate_site <= MAX_FP_RATE and self.threshold > YOLOE_FLOOR)
 
 
 # ---------- bench set ----------
@@ -161,12 +175,13 @@ def operating_point(label: str, phrasings: Sequence[str], threshold: float, scor
     pos = [k for k, labels in truth.items() if label in labels]
     others = [k for k, labels in truth.items() if label not in labels]
     negs = [k for k in others if not truth[k]]
+    site = [k for k in negs if k.startswith(SITE_NEG_PREFIX)]
 
     def rate(keys: list[str]) -> float:
         return sum(fires(scores[k], phrasings, threshold) for k in keys) / len(keys) if keys else 0.0
 
     return OperatingPoint(label, tuple(phrasings), threshold, rate(pos), rate(others), rate(negs),
-                          len(pos), len(others), len(negs))
+                          len(pos), len(others), len(negs), rate(site))
 
 
 def candidates(phrasings: Sequence[str]) -> list[tuple[str, ...]]:
@@ -175,14 +190,11 @@ def candidates(phrasings: Sequence[str]) -> list[tuple[str, ...]]:
 
 
 def best_point(points: Sequence[OperatingPoint]) -> OperatingPoint:
-    """Shipping points beat non-shipping ones. Among shipping points a false alarm in the demo
-    costs more than a miss: lowest FP first, then hit rate. Non-shipping points rank by
-    hit rate minus FP. Ties: fewer phrasings (cheaper), then higher threshold (safer)."""
-    def key(p: OperatingPoint) -> tuple:
-        merit = (-p.fp_rate, p.hit_rate) if p.ships else (p.hit_rate - p.fp_rate, -p.fp_rate)
-        return (p.ships, *merit, -len(p.phrasings), p.threshold)
-
-    return max(points, key=key)
+    """Shipping points beat non-shipping ones; then hit rate minus FP rate (Youden's J, so
+    neither a few extra hits nor a tiny FP saving dominates), then lower FP, fewer phrasings
+    (cheaper), higher threshold (safer)."""
+    return max(points, key=lambda p: (p.ships, round(p.hit_rate - p.fp_rate, 6), -p.fp_rate,
+                                      -len(p.phrasings), p.threshold))
 
 
 def deployed_cutoff(label: str) -> float:
@@ -209,17 +221,20 @@ def _verdict(best: OperatingPoint, existing: bool) -> str:
                 f"{best.fp_rate:.2f}, FP neg {best.fp_rate_neg:.2f}")
     if best.n_pos == 0:
         return "not benched (no positive photos)"
+    if best.ships and best.label in HELD_BACK:
+        return f"passes, **held back**: {HELD_BACK[best.label]}"
     return "**shipped**" if best.ships else "not shipped"
 
 
 def _table(label: str, points: Mapping[tuple[str, ...], OperatingPoint], best: OperatingPoint,
            existing: bool = False) -> list[str]:
     lines = [f"### `{label}` — {_verdict(best, existing)}", "",
-             "| phrasing | best thr | hit rate | FP rate | FP neg | n pos / other | ships |",
-             "|---|---|---|---|---|---|---|"]
+             "| phrasing | best thr | hit rate | FP rate | FP neg | FP site | n pos / other | ships |",
+             "|---|---|---|---|---|---|---|---|"]
     for cand, p in points.items():
         lines.append(f"| {' + '.join(cand)} | {p.threshold:.2f} | {p.hit_rate:.2f} | {p.fp_rate:.2f} | "
-                     f"{p.fp_rate_neg:.2f} | {p.n_pos} / {p.n_other} | {'yes' if p.ships else 'no'} |")
+                     f"{p.fp_rate_neg:.2f} | {p.fp_rate_site:.2f} | {p.n_pos} / {p.n_other} | "
+                     f"{'yes' if p.ships else 'no'} |")
     return lines + [""]
 
 
@@ -232,10 +247,17 @@ def report(scores: Scores, truth: Mapping[str, frozenset[str]], weights: str, im
         f"{len(truth)} images ({n_neg} pure negatives). Images stay outside the repo "
         "(URLs and licences in the bench folder's `sources.csv`).",
         "",
-        f"Image-level metrics. **Ship rule:** hit rate ≥ {MIN_HIT_RATE} and false-positive "
-        f"rate ≤ {MAX_FP_RATE} at one threshold (swept {THRESHOLDS[0]}–{THRESHOLDS[-1]}). "
-        "*FP rate* counts every image that does not contain the label (negatives and other "
-        "labels' positives); *FP neg* counts pure negatives only.",
+        f"Image-level metrics. **Ship rule:** at one threshold (swept {THRESHOLDS[0]}–{THRESHOLDS[-1]}), "
+        f"hit rate ≥ {MIN_HIT_RATE}, FP rate ≤ {MAX_FP_RATE} **and** FP site ≤ {MAX_FP_RATE}, with "
+        f"the threshold above YOLOE's own reporting floor ({YOLOE_FLOOR}). *FP rate* counts every "
+        "image that does not contain the label (negatives and other labels' positives); *FP neg* "
+        "pure negatives only; *FP site* the plain construction-site photos among them (what the "
+        "app actually sees). The best threshold per row is the one with the highest hit rate − "
+        "FP rate among passing thresholds. Labels that pass but feed only rules that cannot be "
+        "judged yet are held back.",
+        "",
+        "Caveat: small sets (9–29 positives per label), and phrasings were picked on this same "
+        "set, so treat rates as ±0.1. Weights: YOLOE-26n (the Space's model).",
         "",
     ]
     shipped: dict[str, OperatingPoint] = {}
@@ -249,7 +271,7 @@ def report(scores: Scores, truth: Mapping[str, frozenset[str]], weights: str, im
             else:
                 points = sweep(label, phrasings, scores, truth)
             best = best_point(list(points.values()))
-            if best.ships and not existing:
+            if best.ships and not existing and label not in HELD_BACK:
                 shipped[label] = best
             lines += _table(label, points, best, existing)
     lines += ["## Recommended `OPEN_VOCAB_CUTOFFS` (for Chat 8's `rules.py`)", "",
@@ -260,6 +282,40 @@ def report(scores: Scores, truth: Mapping[str, frozenset[str]], weights: str, im
     if not shipped:
         lines.append("| — | nothing passed | — | — | — |")
     return "\n".join(lines + [""])
+
+
+PRODUCTION_CUTOFFS: Mapping[str, float] = {"utility_pole": 0.20, "rebar": 0.20}  # what we ship
+
+
+def production_scores(bench: Path, images: Sequence[str], weights: str) -> dict[str, dict[str, float]]:
+    """Run the app's own OpenVocabDetector (Site prompts as shipped) -> image -> label -> max conf."""
+    from PIL import Image
+
+    finder = openvocab.OpenVocabDetector(weights=weights)
+    out: dict[str, dict[str, float]] = {}
+    for rel in images:
+        with Image.open(bench / rel) as img:
+            dets = finder(img.convert("RGB"), "site")
+        best: dict[str, float] = {}
+        for d in dets:
+            best[d.label] = max(best.get(d.label, 0.0), round(d.confidence, 4))
+        out[rel] = best
+    return out
+
+
+def production_section(scores: Scores, truth: Mapping[str, frozenset[str]]) -> list[str]:
+    """Hit / FP per shipped label (and existing ones) with the shipped prompt set and cut-offs."""
+    lines = ["## Production check (shipped Site prompt set, app's `OpenVocabDetector`)", "",
+             "Scores change a little when the prompt set changes, so the shipped set is re-run as "
+             "the app runs it.", "",
+             "| label | cut-off | hit rate | FP rate | FP neg | FP site | ships |", "|---|---|---|---|---|---|---|"]
+    labels = {**PRODUCTION_CUTOFFS, **{lab: deployed_cutoff(lab) for lab in EXISTING_PHRASINGS}}
+    for label, cut in labels.items():
+        p = operating_point(label, (label,), cut, scores, truth)
+        verdict = "yes" if p.ships else ("n/a (no positives)" if p.n_pos == 0 else "no")
+        lines.append(f"| `{label}` | {cut:.2f} | {p.hit_rate:.2f} | {p.fp_rate:.2f} | "
+                     f"{p.fp_rate_neg:.2f} | {p.fp_rate_site:.2f} | {verdict} |")
+    return lines + [""]
 
 
 def all_prompts() -> list[str]:
@@ -276,6 +332,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--out", type=Path, default=ROOT / "docs" / "prompt_bench.md")
     parser.add_argument("--from-scores", action="store_true",
                         help=f"reuse <bench>/{SCORES_FILE} instead of running YOLOE")
+    parser.add_argument("--production", action="store_true",
+                        help="also re-run the shipped Site prompt set through OpenVocabDetector")
     parser.add_argument("--weights", default=openvocab.WEIGHTS)
     parser.add_argument("--imgsz", type=int, default=openvocab.IMG_SIZE)
     return parser.parse_args(argv)
@@ -299,8 +357,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Scoring {len(truth)} images with {len(all_prompts())} prompts ...", flush=True)
         scores = run_yoloe(args.bench, sorted(truth), all_prompts(), args.weights, args.imgsz)
         scores_path.write_text(json.dumps(scores, indent=1), encoding="utf-8")
+    text = report(scores, truth, args.weights, args.imgsz)
+    prod_path = args.bench / "scores_production.json"
+    if args.production:
+        print("Re-running the shipped Site prompt set ...", flush=True)
+        prod_path.write_text(json.dumps(production_scores(args.bench, sorted(truth), args.weights),
+                                        indent=1), encoding="utf-8")
+    if prod_path.is_file():
+        text += "\n".join(production_section(json.loads(prod_path.read_text(encoding="utf-8")), truth))
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(report(scores, truth, args.weights, args.imgsz), encoding="utf-8")
+    args.out.write_text(text, encoding="utf-8")
     print(f"Wrote {args.out}")
     return 0
 

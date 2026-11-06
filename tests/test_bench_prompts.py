@@ -93,11 +93,40 @@ def test_sweep_picks_safest_shipping_threshold() -> None:
     assert best.threshold == 0.50  # highest (safest) threshold with the same rates
 
 
-def test_among_shipping_points_lower_false_positives_wins_over_more_hits() -> None:
-    def point(hit: float, fp: float) -> object:
-        return bench.OperatingPoint("rebar", ("a",), 0.3, hit, fp, fp, 10, 100, 50)
+def _point(hit: float, fp: float) -> object:
+    return bench.OperatingPoint("welding", ("a",), 0.3, hit, fp, fp, 10, 100, 50)
 
-    assert bench.best_point([point(0.69, 0.03), point(0.62, 0.0)]).fp_rate == 0.0
+
+def test_shipping_points_rank_by_hit_rate_minus_fp_rate() -> None:
+    # a big hit-rate gain beats a small FP saving ...
+    assert bench.best_point([_point(0.90, 0.05), _point(0.60, 0.03)]).hit_rate == 0.90
+    # ... and a big FP saving beats a small hit-rate gain
+    assert bench.best_point([_point(0.70, 0.09), _point(0.65, 0.0)]).fp_rate == 0.0
+    # a non-shipping point never beats a shipping one
+    assert bench.best_point([_point(0.95, 0.20), _point(0.60, 0.10)]).hit_rate == 0.60
+
+
+def test_threshold_at_the_yoloe_floor_never_ships() -> None:
+    at_floor = bench.OperatingPoint("fire", ("a",), bench.YOLOE_FLOOR, 0.9, 0.0, 0.0, 10, 100, 50)
+    assert not at_floor.ships
+
+
+def test_false_alarms_on_plain_site_photos_block_shipping() -> None:
+    truth = {**TRUTH, "neg/neg_site_1.jpg": frozenset(), "neg/neg_site_2.jpg": frozenset()}
+    scores = {k: {"trench": 0.5 if k.startswith("p") else 0.0} for k in truth}
+    scores["neg/neg_site_1.jpg"]["trench"] = 0.5  # 1 of 2 site photos fires; 1 of 5 others overall
+    point = bench.operating_point("trench", ("trench",), 0.3,
+                                  scores, {**truth, "p1": {"trench"}, "p2": {"trench"}, "p3": {"trench"}})
+    assert point.fp_rate_site == 0.5 and not point.ships
+
+
+def test_held_back_label_is_reported_but_not_recommended() -> None:
+    truth = {**TRUTH, "w1": frozenset({"welding"}), "w2": frozenset({"welding"})}
+    scores = {k: {p: 0.0 for p in bench.all_prompts()} for k in truth}
+    scores["w1"]["person welding"] = scores["w2"]["person welding"] = 0.5
+    text = bench.report(scores, truth, "yoloe-26n-seg.pt", 640)
+    assert "### `welding` — passes, **held back**" in text
+    assert "| `welding` |" not in text
 
 
 def test_label_with_no_positives_never_ships() -> None:
@@ -126,6 +155,21 @@ def test_report_marks_benched_label_that_fails_as_not_shipped() -> None:
     text = bench.report(scores, truth, "yoloe-26n-seg.pt", 640)
     assert "### `welding` — not shipped" in text
     assert "| `welding` |" not in text
+
+
+def test_production_section_reports_shipped_labels_at_their_cutoffs() -> None:
+    truth = {**TRUTH, "r1": frozenset({"rebar"}), "u1": frozenset({"utility_pole"})}
+    scores = {k: {} for k in truth}
+    scores["r1"]["rebar"] = 0.3
+    scores["u1"]["utility_pole"] = 0.1  # below its 0.20 cut-off -> a miss
+    text = "\n".join(bench.production_section(scores, truth))
+    assert "| `rebar` | 0.20 | 1.00 | 0.00 | 0.00 | 0.00 | yes |" in text
+    assert "| `utility_pole` | 0.20 | 0.00 |" in text
+    assert "| `harness` | 0.25 |" in text
+
+
+def test_shipped_cutoffs_match_the_shipped_site_prompts() -> None:
+    assert set(bench.PRODUCTION_CUTOFFS) <= set(bench.openvocab.SITE_PROMPTS.values())
 
 
 def test_all_prompts_has_no_duplicates_and_includes_existing() -> None:

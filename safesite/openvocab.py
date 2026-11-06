@@ -45,6 +45,10 @@ SITE_PROMPTS: Mapping[str, str] = {
     "extension cord": "cord",
     "cable on the floor": "cord",  # finds real floor cords that "extension cord" misses
     "hose": "hose",
+    # v2: only prompts that passed docs/prompt_bench.md (cut-offs live in rules.OPEN_VOCAB_CUTOFFS)
+    "power pole": "utility_pole",  # -> power_line_contact
+    "exposed rebar": "rebar",  # -> exposed_rebar
+    "steel reinforcement bars sticking up": "rebar",
 }
 HOME_PROMPTS: Mapping[str, str] = {
     "extension cord": "cord",

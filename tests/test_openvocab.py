@@ -22,7 +22,20 @@ def test_site_prompts_cover_the_requested_objects():
     assert set(SITE_PROMPTS) == {
         "safety harness", "scaffolding", "ladder", "shade tent",
         "water cooler", "extension cord", "cable on the floor", "hose",
+        # v2: only prompts that passed docs/prompt_bench.md
+        "power pole", "exposed rebar", "steel reinforcement bars sticking up",
     }
+
+
+def test_v2_prompts_map_to_the_rule_labels_they_feed():
+    assert SITE_PROMPTS["power pole"] == "utility_pole"  # power_line_contact
+    assert SITE_PROMPTS["exposed rebar"] == SITE_PROMPTS["steel reinforcement bars sticking up"] == "rebar"
+
+
+def test_prompts_that_failed_or_were_held_back_do_not_ship():
+    labels = set(SITE_PROMPTS.values())
+    assert not labels & {"power_line", "crane_hook", "welding", "fire", "gas_cylinder",
+                         "fire_extinguisher", "floor_opening", "trench"}
 
 
 def test_home_prompts_cover_the_requested_objects():
