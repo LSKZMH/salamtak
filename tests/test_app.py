@@ -1,5 +1,5 @@
 """App-level tests: Gradio handler, time resolution, alert/score rendering, annotation.
-Rule-by-rule tests: tests/test_rules_stub.py (stub) and tests/test_rules.py (Chat 3)."""
+Rule-by-rule tests live in tests/test_rules.py (Chat 3)."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -35,21 +35,23 @@ def _exif_jpeg(tmp_path: Path, stamp: str, tag: int = app.EXIF_DATETIME_ORIGINAL
 
 
 @pytest.fixture
-def fake_alerts(monkeypatch):
-    data = {
-        "no_helmet": {"en": {"text": "Wear <b>helmet</b>", "verified": True}, "ar": "ارتدِ الخوذة"},
+def fake_alerts() -> alerts.AlertTable:
+    """A small parsed table, passed via table= so tests never depend on alerts.json contents."""
+    return alerts.parse_alerts({
+        "no_helmet": {
+            "en": {"text": "Wear <b>helmet</b>", "verified": True},
+            "ar": {"text": "ارتدِ الخوذة", "verified": False},
+        },
         "machinery_zone": {"en": {"text": "Step away", "verified": True}},
-    }
-    monkeypatch.setattr(alerts, "_load", lambda: data)
-    return data
+    })
 
 
 # ---------- handler ----------
-@pytest.mark.parametrize("name, mode, lang", [
-    ("site_summer_noon.jpg", "Site", "ar"), ("site_winter_morning.jpg", "Site", "en"), ("home_kitchen.jpg", "Home", "hi"),
-])
-def test_analyze_runs_end_to_end_on_examples(name, mode, lang):
-    score_html, alert_html, annotated, table = app.analyze(Image.open(EXAMPLES / name), "", None, True, lang, mode)
+@pytest.mark.parametrize("row", app.EXAMPLES, ids=lambda row: Path(row[0]).name)
+def test_analyze_runs_end_to_end_on_examples(row):
+    """Each example row exactly as a judge's click passes it (photo, time, WBGT, outdoor, lang, mode)."""
+    path, *inputs = row
+    score_html, alert_html, annotated, table = app.analyze(Image.open(path), *inputs)
     assert "/100" in score_html and max(annotated.size) <= 1280
     assert table and all(len(row) == 3 for row in table)
     assert "<li" in alert_html
@@ -113,19 +115,26 @@ def test_bad_override_raises_friendly_error():
 
 # ---------- alerts rendering ----------
 def test_alerts_are_escaped_and_tagged_with_language(fake_alerts):
-    html_out = app._alerts_html([Hazard.of("no_helmet", "r"), Hazard.of("no_helmet", "r2")], "en")
+    hazards = [Hazard.of("no_helmet", "r"), Hazard.of("no_helmet", "r2")]
+    html_out = app._alerts_html(hazards, "en", table=fake_alerts)
     assert "&lt;b&gt;helmet&lt;/b&gt;" in html_out and "<b>" not in html_out
     assert html_out.count("<li") == 1  # same id twice -> one alert
 
 
-def test_rtl_plain_string_translation_is_marked_unverified(fake_alerts):
-    html_out = app._alerts_html([Hazard.of("no_helmet", "r")], "ar")
+def test_rtl_unverified_translation_is_marked(fake_alerts):
+    html_out = app._alerts_html([Hazard.of("no_helmet", "r")], "ar", table=fake_alerts)
     assert "lang='ar' dir='rtl'" in html_out and "unverified translation" in html_out
 
 
-def test_missing_translation_and_missing_phrase_are_flagged(fake_alerts):
-    html_out = app._alerts_html([Hazard.of("machinery_zone", "r"), Hazard.of("trip_cord", "r")], "hi")
-    assert "English: no translation yet" in html_out and "no alert text yet" in html_out
+def test_missing_translation_falls_back_to_english_with_note(fake_alerts):
+    # A missing hazard id can't happen: alerts.load_alerts() guarantees every id at boot.
+    html_out = app._alerts_html([Hazard.of("machinery_zone", "r")], "hi", table=fake_alerts)
+    assert "lang='en' dir='ltr'" in html_out and "English: no translation yet" in html_out
+
+
+def test_real_alerts_json_covers_every_rendered_hazard():
+    html_out = app._alerts_html([Hazard.of("no_helmet", "r"), Hazard.of("heat_welfare_gap", "r")], "ar")
+    assert html_out.count("<li") == 2
 
 
 def test_no_hazards_message():
@@ -150,9 +159,55 @@ def test_unassessed_photo_never_shows_a_score():
 
 
 # ---------- UI + annotation ----------
+# ---------- detector switch (SAFESITE_DETECTOR) ----------
+def _must_not_build():
+    raise AssertionError("the trained model must not be loaded in mock mode")
+
+
+@pytest.mark.parametrize("kind", ["mock", "", "  MOCK "])
+def test_detector_switch_defaults_to_mock(kind):
+    primary, warning = app.build_primary(kind, factory=_must_not_build)
+    assert primary.is_mock and warning is None
+
+
+def test_detector_switch_yolo_builds_the_trained_model():
+    trained = object()
+    primary, warning = app.build_primary("yolo", factory=lambda: trained)
+    assert primary is trained and warning is None
+
+
+def test_trained_model_failure_falls_back_to_mock_with_visible_warning():
+    def broken():
+        raise RuntimeError("401 Unauthorized: hf_secret_should_not_leak")
+
+    primary, warning = app.build_primary("yolo", factory=broken)
+    assert primary.is_mock
+    assert "failed to load" in warning and "RuntimeError" in warning
+    assert "hf_secret_should_not_leak" not in warning  # details go to the logs, not the page
+
+
+def test_unknown_detector_value_falls_back_with_warning():
+    primary, warning = app.build_primary("yolov8", factory=_must_not_build)
+    assert primary.is_mock and "yolov8" in warning
+
+
+def test_default_app_boot_uses_mock_without_warning():
+    assert app.PRIMARY.is_mock and app.LOAD_WARNING is None
+
+
 def test_ui_builds_and_examples_exist():
     assert isinstance(app.build_ui(), gr.Blocks)
     assert all(Path(row[0]).is_file() for row in app.EXAMPLES)
+
+
+def test_every_real_example_photo_is_credited():
+    """CC BY-SA requires attribution: each example we didn't draw must appear in a CREDITS.md next to it."""
+    synthetic = {"site_summer_noon.jpg", "site_winter_morning.jpg", "home_kitchen.jpg"}  # scripts/make_placeholders.py
+    for row in app.EXAMPLES:
+        photo = Path(row[0])
+        if photo.name not in synthetic:
+            credits = photo.parent / "CREDITS.md"
+            assert credits.is_file() and f"`{photo.name}`" in credits.read_text(encoding="utf-8"), photo.name
 
 
 def test_annotate_draws_high_box_red_and_keeps_input():

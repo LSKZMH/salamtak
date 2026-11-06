@@ -4,6 +4,8 @@
 torch==2.15.0+cpu
 torchvision==0.29.2+cpu
 ultralytics==8.4.203
+# YOLOE-26 text prompts need this tokenizer; listed so it is not pip-installed at Space boot
+clip @ git+https://github.com/ultralytics/CLIP.git@7ffa84b3bfa40c42ecc1c77147a855e69cb2dd40
 huggingface_hub==2.4.0
 pillow>=10.1,<13
 numpy>=1.26,<3

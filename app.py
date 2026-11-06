@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import html
 import logging
+import os
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import gradio as gr
 from PIL import Image
 
-from safesite import alerts, detect
+from safesite import alerts, detect, openvocab
 from safesite.annotate import annotate
 from safesite.pipeline import Analysis, ImageTooLargeError, analyze_image
 from safesite.types import Hazard, SceneContext
@@ -32,11 +35,41 @@ LANGUAGES: dict[str, str] = {
 }
 RTL_LANGUAGES = frozenset({"ar", "ur"})
 
-# ---- The one line to change when the trained model is on the Hub: ----
-DETECTOR = detect.MockDetector()  # -> detect.YoloDetector()
-
 log = logging.getLogger("safesite")
 logging.basicConfig(level=logging.INFO)
+MAX_ECHO_KIND = 20  # chars of an unknown SAFESITE_DETECTOR value shown in the banner
+
+
+def build_primary(kind: str, factory: Callable[[], Any] = detect.YoloDetector) -> tuple[Any, str | None]:
+    """The trained-detector slot: "mock" (default) or "yolo" (Chat 2's YOLO26 from the Hub,
+    configured by SAFESITE_MODEL_REPO / SAFESITE_WEIGHTS_FILE / SAFESITE_MODEL_REVISION).
+
+    Never crashes the Space: an unknown value or a model that fails to load falls back to the
+    mock and returns a warning the UI shows as a banner. Full error details go only to the logs.
+    """
+    choice = (kind or "mock").strip().lower()
+    if choice == "mock":
+        return detect.MockDetector(), None
+    if choice != "yolo":
+        log.error("unknown SAFESITE_DETECTOR value %r; using the mock", kind)
+        shown = html.escape(choice[:MAX_ECHO_KIND])
+        return detect.MockDetector(), f"Unknown SAFESITE_DETECTOR value '{shown}' (use mock or yolo); showing the mock detector."
+    try:
+        return factory(), None
+    except Exception as exc:  # any load failure: keep the demo up, say so loudly
+        log.exception("trained detector failed to load; using the mock")
+        return detect.MockDetector(), (
+            f"Trained model failed to load ({type(exc).__name__}); showing the mock detector. See the Space logs."
+        )
+
+
+# Trained detector: set the Space variable SAFESITE_DETECTOR=yolo once Chat 2's best.pt is on the Hub
+# (and pin SAFESITE_MODEL_REVISION); no code change needed.
+PRIMARY, LOAD_WARNING = build_primary(os.environ.get("SAFESITE_DETECTOR", "mock"))
+# YOLOE-26 open-vocab finder (harness, scaffold, cords, ...; all of Home mode). Set the Space
+# variable SAFESITE_OPEN_VOCAB=0 to switch it off (tests do, so they never load the model).
+OPEN_VOCAB = os.environ.get("SAFESITE_OPEN_VOCAB", "1") != "0"
+DETECTOR = detect.CombinedDetector(PRIMARY, openvocab.OpenVocabDetector()) if OPEN_VOCAB else PRIMARY
 
 DOHA_TZ = timezone(timedelta(hours=3))  # Qatar: UTC+3, no DST
 EXIF_DATETIME_ORIGINAL = 0x9003
@@ -132,13 +165,13 @@ def _alert_item(a: alerts.Alert, requested: str) -> str:
             f"{html.escape(a.text)}{tail}</li>")
 
 
-def _alerts_html(hazards: tuple[Hazard, ...] | list[Hazard], lang: str) -> str:
+def _alerts_html(
+    hazards: tuple[Hazard, ...] | list[Hazard], lang: str, table: alerts.AlertTable | None = None
+) -> str:
+    """One alert per distinct hazard id. ``table`` defaults to the validated alerts.json."""
     if not hazards:
         return "<p>No hazards found.</p>"
-    unique: dict[str, alerts.Alert] = {}
-    for h in hazards:
-        unique.setdefault(h.id, alerts.alert_for(h.id, lang))
-    items = "".join(_alert_item(a, lang) for a in unique.values())
+    items = "".join(_alert_item(a, lang) for a in alerts.alerts_for(hazards, lang, table))
     return f"<section aria-label='Safety alerts' aria-live='polite'><ul class='ss-alerts'>{items}</ul></section>"
 
 
@@ -179,9 +212,12 @@ def analyze(
 
 # ---------- UI ----------
 EXAMPLES = [
-    [str(EXAMPLES_DIR / "site_summer_noon.jpg"), "", 33.5, True, "ar", "Site"],
-    [str(EXAMPLES_DIR / "site_winter_morning.jpg"), "", None, True, "en", "Site"],
-    [str(EXAMPLES_DIR / "home_kitchen.jpg"), "", None, False, "hi", "Home"],
+    # Real Wikimedia photos (CC BY-SA, credited in examples/qatar_test/CREDITS.md); faces covered or turned away.
+    # Doha crew at a summer noon with high WBGT: no hard hats + Qatar midday ban + WBGT stop-work.
+    [str(EXAMPLES_DIR / "qatar_test" / "doha_roadside_crew_meeting.jpg"), "2026-07-15 12:30", 33.5, True, "ar", "Site"],
+    # Workers walking away from camera on a winter morning: the helmet check on its own.
+    [str(EXAMPLES_DIR / "qatar_test" / "dubai_workers_walking.jpg"), "2026-11-05 08:00", None, True, "en", "Site"],
+    [str(EXAMPLES_DIR / "home_cords_floor.jpg"), "", None, False, "hi", "Home"],  # CC BY-SA, see examples/CREDITS.md
 ]
 
 
@@ -193,7 +229,12 @@ def build_ui() -> gr.Blocks:
             "Includes Qatar's midday summer work ban and the WBGT stop-work rule. No LLM in the loop.  \n"
             f"*{DISCLAIMER}*"
         )
-        if DETECTOR.is_mock:
+        if LOAD_WARNING:
+            gr.Markdown(f"> ⚠️ **{LOAD_WARNING}**")
+        if PRIMARY.is_mock and OPEN_VOCAB:
+            gr.Markdown("> **Demo mode:** people, helmets, vests and vehicles are fixed fake boxes from a mock "
+                        "detector. Harness, scaffold, ladder, shade, water, cord and all Home-mode finds are real.")
+        elif DETECTOR.is_mock:
             gr.Markdown("> **Demo mode:** the detector is a mock that returns fixed fake boxes for every photo.")
         with gr.Row():
             with gr.Column(scale=1):

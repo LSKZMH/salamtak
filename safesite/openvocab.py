@@ -43,10 +43,12 @@ SITE_PROMPTS: Mapping[str, str] = {
     "shade tent": "shade_tent",
     "water cooler": "water_cooler",
     "extension cord": "cord",
+    "cable on the floor": "cord",  # finds real floor cords that "extension cord" misses
     "hose": "hose",
 }
 HOME_PROMPTS: Mapping[str, str] = {
     "extension cord": "cord",
+    "cable on the floor": "cord",
     "wet floor": "wet_floor",
     "knife": "knife",
     "cleaning chemicals": "chemicals",
@@ -115,6 +117,9 @@ def _load_yoloe(weights: str) -> Any:
 
 class OpenVocabDetector:
     """YOLOE-26 text-prompt finder on CPU. Call with (PIL image, mode) -> list[Detection]."""
+
+    is_mock = False
+    supports_home = True
 
     def __init__(
         self,

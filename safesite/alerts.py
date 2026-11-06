@@ -2,18 +2,28 @@
 
 Shape: ``{hazard_id: {lang: {"text": str, "verified": bool}}}`` for
 en, ar, hi, bn, ne, ur, ml. Keys starting with "_" are metadata and skipped.
-Unverified (machine-drafted) translations are returned with ``verified=False``
-so the UI can mark them; a missing or empty language falls back to English.
+
+Two layers:
+- ``load_alerts()`` is strict: the app calls it at boot so a broken or incomplete file
+  fails loudly before the demo, not during it.
+- ``alert_for()`` is lenient at runtime: a missing or empty language falls back to English,
+  a plain-string phrase counts as unverified, and a hazard with no phrase at all gets a
+  flagged generic line (``missing=True``) instead of crashing the UI.
+Only an explicit ``"verified": true`` marks a phrase as confirmed by a native speaker;
+machine-drafted translations stay ``false``. Returned text is plain text: callers must
+HTML-escape it before rendering.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from types import MappingProxyType
+from typing import Any
 
 from safesite.types import HAZARD_IDS, Hazard
 
@@ -22,16 +32,19 @@ DEFAULT_LANGUAGE = "en"
 LANGUAGES: tuple[str, ...] = ("en", "ar", "hi", "bn", "ne", "ur", "ml")
 
 AlertTable = Mapping[str, Mapping[str, "Alert"]]
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class Alert:
     hazard_id: str
-    language: str
+    language: str  # language actually used (may be the English fallback)
     text: str
     verified: bool
+    missing: bool = False  # True when alerts.json has no phrase for this hazard at all
 
 
+# ---------- strict validation (boot) ----------
 def _parse_phrase(hazard_id: str, language: str, raw: object) -> Alert | None:
     if not isinstance(raw, dict) or not isinstance(raw.get("text"), str):
         raise ValueError(f"alerts.json: {hazard_id}.{language} needs a 'text' string")
@@ -75,14 +88,59 @@ def load_alerts(path: Path = ALERTS_PATH) -> AlertTable:
     return table
 
 
+# ---------- lenient lookup (runtime) ----------
+@cache
+def _load() -> dict[str, Any]:
+    """Raw alerts.json, read once. Tests may replace this with fake data."""
+    raw = json.loads(ALERTS_PATH.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"{ALERTS_PATH.name} must be a JSON object of hazard id -> languages")
+    return raw
+
+
+def _phrase(hazard_id: str, language: str, raw: object) -> Alert | None:
+    if isinstance(raw, str):
+        text, verified = raw, False
+    elif isinstance(raw, dict) and isinstance(raw.get("text"), str):
+        text, verified = raw["text"], raw.get("verified") is True
+    else:
+        return None
+    text = text.strip()
+    return Alert(hazard_id, language, text, verified) if text else None
+
+
+def _from_raw(hazard_id: str, language: str) -> Alert | None:
+    phrases = _load().get(hazard_id)
+    if not isinstance(phrases, dict):
+        return None
+    for code in (language, DEFAULT_LANGUAGE):
+        found = _phrase(hazard_id, code, phrases.get(code))
+        if found is not None:
+            return found
+    return None
+
+
+def _from_table(hazard_id: str, language: str, table: AlertTable) -> Alert | None:
+    phrases = table.get(hazard_id)
+    if phrases is None:
+        return None
+    return phrases.get(language) or phrases.get(DEFAULT_LANGUAGE)
+
+
 def alert_for(
     hazard_id: str, language: str = DEFAULT_LANGUAGE, table: AlertTable | None = None
 ) -> Alert:
-    """The phrase in ``language``, or the English one if that language is missing."""
-    phrases = (table if table is not None else load_alerts()).get(hazard_id)
-    if phrases is None:
-        raise KeyError(f"no alert phrases for hazard id {hazard_id!r}")
-    return phrases.get(language) or phrases[DEFAULT_LANGUAGE]
+    """The phrase in ``language``, else English, else a flagged generic line.
+
+    ``table`` (from ``parse_alerts``) overrides the shipped file, e.g. in tests."""
+    found = (
+        _from_raw(hazard_id, language) if table is None else _from_table(hazard_id, language, table)
+    )
+    if found is not None:
+        return found
+    log.warning("no alert phrase for hazard %r; using a generic one", hazard_id)
+    generic = f"{hazard_id.replace('_', ' ').capitalize()}: no alert text yet."
+    return Alert(hazard_id, DEFAULT_LANGUAGE, generic, verified=False, missing=True)
 
 
 def alerts_for(

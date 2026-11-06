@@ -166,7 +166,7 @@ def test_no_vest_rule_only_counts_vehicles_not_machinery():
 
 
 # --- trip_cord -------------------------------------------------------------------
-@pytest.mark.parametrize("label", ["cord", "hose"])
+@pytest.mark.parametrize("label", ["cord", "hose", "extension cord"])
 def test_trip_cord_flags_cord_or_hose_in_lower_third(label):
     hazards = rules.trip_cord([det(label, (0.10, 0.80, 0.90, 0.86), 0.4)])
     assert ids(hazards) == ["trip_cord"]
@@ -261,19 +261,36 @@ def test_wbgt_rejects_non_finite_input():
 
 
 # --- heat_welfare_gap -------------------------------------------------------------
-def test_welfare_gap_flags_outdoor_workers_without_shade_or_water():
-    hazards = rules.heat_hazards([person()], SceneContext())
+SUMMER_MORNING = SceneContext(taken_at=datetime(2026, 7, 15, 8, 0))  # in season, before the ban
+
+
+def test_welfare_gap_flags_outdoor_workers_without_shade_or_water_in_summer():
+    hazards = rules.heat_hazards([person()], SUMMER_MORNING)
     assert ids(hazards) == ["heat_welfare_gap"]
+    assert "summer heat season" in hazards[0].reason
 
 
 @pytest.mark.parametrize("label", ["shade tent", "water cooler"])
 def test_welfare_gap_clear_when_shade_or_water_seen(label):
     scene = [person(), det(label, (0.70, 0.10, 0.95, 0.40), 0.3)]
-    assert rules.heat_hazards(scene, SceneContext()) == []
+    assert rules.heat_hazards(scene, SUMMER_MORNING) == []
 
 
 def test_welfare_gap_clear_without_workers():
-    assert rules.heat_hazards([], SceneContext()) == []
+    assert rules.heat_hazards([], SUMMER_MORNING) == []
+
+
+@pytest.mark.parametrize(
+    "moment",
+    [datetime(2026, 11, 6, 9, 0), datetime(2026, 5, 31, 8, 0), datetime(2026, 9, 16, 8, 0)],
+    ids=["november", "31-May", "16-Sep"],
+)
+def test_welfare_gap_not_raised_outside_summer(moment):
+    assert rules.heat_hazards([person()], SceneContext(taken_at=moment)) == []
+
+
+def test_welfare_gap_not_judged_without_a_time():
+    assert rules.heat_hazards([person()], SceneContext()) == []
 
 
 # --- indoor toggle off: only wbgt_stop survives --------------------------------------
@@ -296,8 +313,9 @@ def test_outdoor_summer_noon_raises_all_heat_hazards():
 HOME = SceneContext(mode=Mode.HOME)
 
 
-def test_home_trip_flags_cord_on_floor_and_not_site_trip_cord():
-    assert ids(rules.evaluate([det("cord", (0.20, 0.85, 0.70, 0.90))], HOME)) == ["home_trip"]
+@pytest.mark.parametrize("label", ["cord", "extension cord"])
+def test_home_trip_flags_cord_on_floor_and_not_site_trip_cord(label):
+    assert ids(rules.evaluate([det(label, (0.20, 0.85, 0.70, 0.90))], HOME)) == ["home_trip"]
 
 
 def test_home_trip_ignores_hoses():
@@ -318,13 +336,36 @@ def test_home_slip_clear_without_wet_floor():
     assert rules.home_slip([det("cord", (0.20, 0.20, 0.70, 0.25))]) == []
 
 
-@pytest.mark.parametrize("label", ["knife", "chemicals"])
+@pytest.mark.parametrize("label", ["knife", "chemicals", "cleaning chemicals"])
 def test_home_child_reach_flags_low_items(label):
     assert ids(rules.evaluate([det(label, (0.40, 0.70, 0.50, 0.80))], HOME)) == ["home_child_reach"]
 
 
 def test_home_child_reach_clear_when_item_is_high():
     assert rules.evaluate([det("knife", (0.40, 0.10, 0.50, 0.20))], HOME) == []
+
+
+# --- reason wording for several objects --------------------------------------------
+def _floor(label: str, x: float) -> Detection:
+    return det(label, (x, 0.80, x + 0.1, 0.90))
+
+
+def test_reason_counts_several_cords_by_name():
+    hazards = rules.home_trip([_floor("cord", 0.05 + 0.2 * i) for i in range(4)])
+    assert hazards[0].reason == "Trip risk: 4 cords on the floor (lower third of the frame)."
+
+
+def test_reason_lists_mixed_objects_with_articles():
+    hazards = rules.trip_cord([_floor("cord", 0.05), _floor("cord", 0.3), _floor("hose", 0.55)])
+    assert "2 cords and a hose in the walkway" in hazards[0].reason
+
+
+def test_reason_uses_an_and_irregular_plurals():
+    reach = rules.home_child_reach(
+        [_floor("knife", 0.1), _floor("knife", 0.4), _floor("chemicals", 0.7)]
+    )
+    assert "chemicals and 2 knives" in reach[0].reason
+    assert "an extension cord" in rules.home_trip([_floor("extension cord", 0.1)])[0].reason
 
 
 def test_home_mode_skips_site_and_heat_rules():
