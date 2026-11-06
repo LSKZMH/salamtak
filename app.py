@@ -186,7 +186,7 @@ def analyze(
 EXAMPLES = [
     [str(EXAMPLES_DIR / "site_summer_noon.jpg"), "", 33.5, True, "ar", "Site"],
     [str(EXAMPLES_DIR / "site_winter_morning.jpg"), "", None, True, "en", "Site"],
-    [str(EXAMPLES_DIR / "home_kitchen.jpg"), "", None, False, "hi", "Home"],
+    [str(EXAMPLES_DIR / "home_cords_floor.jpg"), "", None, False, "hi", "Home"],  # CC BY-SA, see examples/CREDITS.md
 ]
 
 
