@@ -116,6 +116,9 @@ def _load_yoloe(weights: str) -> Any:
 class OpenVocabDetector:
     """YOLOE-26 text-prompt finder on CPU. Call with (PIL image, mode) -> list[Detection]."""
 
+    is_mock = False
+    supports_home = True
+
     def __init__(
         self,
         weights: str = WEIGHTS,

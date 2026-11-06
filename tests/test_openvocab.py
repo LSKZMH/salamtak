@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from safesite import openvocab
+from safesite import openvocab, rules
 from safesite.openvocab import (
     HOME_PROMPTS,
     SITE_PROMPTS,
@@ -15,12 +15,6 @@ from safesite.openvocab import (
     to_detections,
 )
 from safesite.types import Detection
-
-# Labels rules.py (Chat 3) looks for; openvocab must only ever emit these.
-RULES_OPEN_VOCAB_LABELS = {
-    "harness", "scaffold", "ladder", "shade_tent", "water_cooler",
-    "cord", "hose", "wet_floor", "knife", "chemicals",
-}
 
 
 # ---------- prompt sets ----------
@@ -37,7 +31,12 @@ def test_home_prompts_cover_the_requested_objects():
 
 def test_every_prompt_maps_to_a_label_rules_py_understands():
     labels = set(SITE_PROMPTS.values()) | set(HOME_PROMPTS.values())
-    assert labels <= RULES_OPEN_VOCAB_LABELS
+    assert labels <= rules.OPEN_VOCAB_LABELS  # so rules.py gives them its open-vocab cut-off
+
+
+def test_detector_meets_the_app_detector_contract():
+    assert OpenVocabDetector.is_mock is False
+    assert OpenVocabDetector.supports_home is True
 
 
 @pytest.mark.parametrize(
