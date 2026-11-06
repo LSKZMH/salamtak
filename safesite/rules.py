@@ -25,6 +25,12 @@ MACHINERY_ZONE_FACTOR = 0.5  # danger zone: within 0.5 x person height of machin
 FALL_ZONE_FACTOR = 0.25  # "near" a scaffold/ladder: within 0.25 x person height
 WALKWAY_TOP_Y = 2 / 3  # lower third of the frame (y > 2/3) is where people walk
 CHILD_REACH_MIN_Y = 0.5  # objects centred in the lower half of the frame are in a child's reach
+# v2 (starting values from chat-8-rules-v2.md; tune only with evidence)
+WORKER_DOWN_MIN_CONF = 0.5  # only a confident person box may count as lying down
+WORKER_DOWN_RATIO = 1.4  # real width / height at or above this = lying down
+WORKER_DOWN_MIN_HEIGHT = 0.04  # ignore tiny far-away boxes (fraction of image height)
+BORDER_MARGIN = 0.01  # a box this close to an edge is cut off (a cut-off torso looks wide)
+WORKER_DOWN_MAX_INSIDE = 0.6  # a person box >= 60% inside a machine/vehicle is its driver
 
 # --- Labels (normalized: lowercase, underscores) ------------------------------
 PERSON, HELMET, NO_HELMET = "person", "helmet", "no_helmet"
@@ -111,6 +117,29 @@ def head_region(box: Box) -> Box:
 
 def centre_y(box: Box) -> float:
     return (box[1] + box[3]) / 2
+
+
+def width_to_height(box: Box, aspect_ratio: float = 1.0) -> float:
+    """Box width / height in real pixels (same aspect_ratio conversion as ``gap``)."""
+    return (box[2] - box[0]) * aspect_ratio / height(box)
+
+
+def touches_border(box: Box, margin: float = BORDER_MARGIN) -> bool:
+    return box[0] <= margin or box[1] <= margin or box[2] >= 1 - margin or box[3] >= 1 - margin
+
+
+def inside_fraction(inner: Box, outer: Box) -> float:
+    """Share of ``inner``'s area that lies inside ``outer`` (0-1)."""
+    w = max(0.0, min(inner[2], outer[2]) - max(inner[0], outer[0]))
+    h = max(0.0, min(inner[3], outer[3]) - max(inner[1], outer[1]))
+    return (w * h) / ((inner[2] - inner[0]) * height(inner))
+
+
+def _side(box: Box) -> str:
+    centre_x = (box[0] + box[2]) / 2
+    if centre_x < 1 / 3:
+        return "on the left"
+    return "on the right" if centre_x > 2 / 3 else "in the middle"
 
 
 def within_zone(
@@ -332,6 +361,38 @@ def heat_hazards(detections: Sequence[Detection], context: SceneContext) -> list
     return [h for h in found if h is not None]
 
 
+# --- Site rules v2 -------------------------------------------------------------------
+def _is_lying(person: Detection, machines: Sequence[Detection], aspect_ratio: float) -> bool:
+    box = person.box
+    return (
+        person.confidence >= WORKER_DOWN_MIN_CONF
+        and height(box) >= WORKER_DOWN_MIN_HEIGHT
+        and width_to_height(box, aspect_ratio) >= WORKER_DOWN_RATIO
+        and not touches_border(box)
+        and not any(inside_fraction(box, m.box) >= WORKER_DOWN_MAX_INSIDE for m in machines)
+    )
+
+
+def worker_down(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> list[Hazard]:
+    """Person box clearly wider than tall in real pixels: lying down (heat illness or fall)."""
+    machines = with_labels(detections, {MACHINERY, VEHICLE})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        if not _is_lying(person, machines, aspect_ratio):
+            continue
+        ratio = width_to_height(person.box, aspect_ratio)
+        hazards.append(
+            Hazard.of(
+                "worker_down",
+                f"Person {i + 1} is lying on the ground {_side(person.box)} "
+                f"(box {ratio:.1f}x wider than tall): possible heat illness or fall.",
+                (person.box,),
+                _subject(i),
+            )
+        )
+    return hazards
+
+
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
@@ -392,5 +453,6 @@ def evaluate(detections: Sequence[Detection], context: SceneContext | None = Non
         *heat_hazards(dets, ctx),
         *no_vest_near_vehicle(dets, ratio),
         *trip_cord(dets),
+        *worker_down(dets, ratio),
     ]
     return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)

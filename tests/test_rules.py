@@ -566,3 +566,99 @@ def test_open_vocab_cutoffs_are_never_used_for_trained_detector_output(monkeypat
 )
 def test_v2_display_names(label, name):
     assert rules.DISPLAY_NAME[label] == name
+
+
+# --- worker_down -------------------------------------------------------------------------
+LYING = (0.30, 0.70, 0.60, 0.85)  # 0.30 wide x 0.15 tall: ratio 2.0
+
+
+def test_worker_down_flags_person_lying_on_the_ground():
+    hazards = rules.worker_down([person(LYING)])
+    assert ids(hazards) == ["worker_down"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject == "person:0"
+    assert "lying on the ground in the middle" in hazards[0].reason
+    assert "possible heat illness or fall" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    "box",
+    [PERSON, (0.40, 0.50, 0.49, 0.60)],  # standing; crouching (ratio 0.9)
+    ids=["standing", "crouching"],
+)
+def test_worker_down_clear_for_upright_people(box):
+    assert rules.worker_down([person(box)]) == []
+
+
+@pytest.mark.parametrize(
+    ("box", "down"),
+    [((0.40, 0.60, 0.539, 0.70), False), ((0.40, 0.60, 0.541, 0.70), True)],
+    ids=["ratio-1.39", "ratio-1.41"],
+)
+def test_worker_down_ratio_threshold(box, down):
+    assert bool(rules.worker_down([person(box)])) is down
+
+
+@pytest.mark.parametrize(
+    ("box", "down"),
+    [((0.40, 0.60, 0.50, 0.639), False), ((0.40, 0.60, 0.50, 0.641), True)],
+    ids=["height-0.039", "height-0.041"],
+)
+def test_worker_down_min_height(box, down):
+    assert bool(rules.worker_down([person(box)])) is down
+
+
+@pytest.mark.parametrize(("conf", "down"), [(0.49, False), (0.50, True)])
+def test_worker_down_needs_a_confident_person(conf, down):
+    assert bool(rules.worker_down([det("person", LYING, conf)])) is down
+
+
+def test_worker_down_uses_real_pixels_on_wide_and_tall_images():
+    square = (0.40, 0.60, 0.50, 0.70)  # 1.0 on a square image, 1.78 at 16:9
+    assert rules.worker_down([person(square)]) == []
+    assert ids(rules.worker_down([person(square)], aspect_ratio=16 / 9)) == ["worker_down"]
+    assert rules.worker_down([person(LYING)], aspect_ratio=9 / 16) == []  # 2.0 -> 1.125
+
+
+@pytest.mark.parametrize(
+    "box",
+    [(0.0, 0.70, 0.30, 0.85), (0.005, 0.70, 0.30, 0.85), (0.30, 0.85, 0.60, 1.0),
+     (0.70, 0.70, 0.995, 0.85)],
+    ids=["left-edge", "within-margin", "bottom-edge", "right-margin"],
+)
+def test_worker_down_ignores_boxes_cut_off_by_the_border(box):
+    assert rules.worker_down([person(box)]) == []
+
+
+def test_worker_down_flags_box_just_inside_the_border_margin():
+    assert ids(rules.worker_down([person((0.02, 0.70, 0.32, 0.85))])) == ["worker_down"]
+
+
+@pytest.mark.parametrize(
+    ("vehicle", "down"),
+    [
+        ((0.20, 0.60, 0.80, 0.95), False),  # fully inside: a driver
+        ((0.10, 0.50, 0.51, 0.95), False),  # 70% inside
+        ((0.10, 0.50, 0.42, 0.95), True),  # 40% inside
+    ],
+    ids=["inside", "70pct", "40pct"],
+)
+def test_worker_down_ignores_people_inside_a_vehicle(vehicle, down):
+    assert bool(rules.worker_down([person(LYING), det("vehicle", vehicle)])) is down
+
+
+def test_worker_down_ignores_people_inside_machinery():
+    assert rules.worker_down([person(LYING), det("machinery", (0.20, 0.60, 0.80, 0.95))]) == []
+
+
+def test_worker_down_once_per_person_and_names_the_side():
+    left, right = (0.05, 0.70, 0.25, 0.80), (0.70, 0.70, 0.95, 0.80)
+    hazards = rules.worker_down([person(left), person(PERSON), person(right)])
+    assert [h.subject for h in hazards] == ["person:0", "person:2"]
+    assert "on the left" in hazards[0].reason
+    assert "on the right" in hazards[1].reason
+
+
+def test_worker_down_runs_in_site_mode_only():
+    assert "worker_down" in ids(rules.evaluate([person(LYING)], INDOOR))
+    assert rules.evaluate([person(LYING)], SceneContext(mode=Mode.HOME)) == []
