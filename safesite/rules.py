@@ -34,6 +34,7 @@ WORKER_DOWN_MAX_INSIDE = 0.6  # a person box >= 60% inside a machine/vehicle is 
 SUSPENDED_LOAD_FACTOR = 1.0  # crane hook within 1.0 x person height to the side
 SUSPENDED_LOAD_TOP_FRACTION = 0.1  # hook bottom may reach 0.1 x person height below their top
 POWER_LINE_FACTOR = 0.5  # machinery within 0.5 x its own height of a power pole / line
+HOT_WORK_FACTOR = 2.0  # welding within 2.0 x gas-cylinder height of the cylinder
 
 # --- Labels (normalized: lowercase, underscores) ------------------------------
 PERSON, HELMET, NO_HELMET = "person", "helmet", "no_helmet"
@@ -469,6 +470,42 @@ def power_line_contact(
     ]
 
 
+def _welding_near_cylinders(
+    detections: Sequence[Detection], aspect_ratio: float
+) -> list[tuple[Detection, Detection, float]]:
+    """(welding, cylinder, gap in cylinder heights) for pairs within HOT_WORK_FACTOR."""
+    cylinders = with_labels(detections, {GAS_CYLINDER})
+    pairs = [
+        (w, c, gap(w.box, c.box, aspect_ratio) / height(c.box))
+        for w in with_labels(detections, {WELDING})
+        for c in cylinders
+    ]
+    return [p for p in pairs if p[2] <= HOT_WORK_FACTOR]
+
+
+def hot_work_fire(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> list[Hazard]:
+    """Fire anywhere, or welding within 2.0 x gas-cylinder height of a gas cylinder."""
+    fires = with_labels(detections, {FIRE})
+    close = _welding_near_cylinders(detections, aspect_ratio)
+    if not fires and not close:
+        return []
+    causes = []
+    if fires:
+        causes.append(f"fire seen (confidence {max(f.confidence for f in fires):.2f})")
+    if close:
+        distance = min(p[2] for p in close)
+        where = "next to" if distance == 0 else f"{distance:.2f}x cylinder height from"
+        causes.append(f"welding {where} a gas cylinder")
+    involved = [*fires, *(d for w, c, _ in close for d in (w, c))]
+    return [
+        Hazard.of(
+            "hot_work_fire",
+            f"Hot work fire risk: {' and '.join(causes)}.",
+            _unique_boxes(involved),
+        )
+    ]
+
+
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
@@ -532,5 +569,6 @@ def evaluate(detections: Sequence[Detection], context: SceneContext | None = Non
         *worker_down(dets, ratio),
         *under_suspended_load(dets, ratio),
         *power_line_contact(dets, ratio),
+        *hot_work_fire(dets, ratio),
     ]
     return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)

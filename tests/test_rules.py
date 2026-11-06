@@ -789,3 +789,56 @@ def test_power_line_once_per_photo():
     assert len(hazards) == 1
     assert len(hazards[0].boxes) == 4
     assert "power pole" in hazards[0].reason  # names the nearest pair
+
+
+# --- hot_work_fire (CYLINDER is 0.2 tall: zone 2.0 x 0.2 = 0.4) ------------------------------
+WELD = (0.40, 0.40, 0.50, 0.50)
+CYLINDER = (0.55, 0.50, 0.60, 0.70)
+FIRE = (0.10, 0.60, 0.20, 0.80)
+
+
+def test_hot_work_flags_any_fire():
+    hazards = rules.hot_work_fire([det("fire", FIRE, 0.6)])
+    assert ids(hazards) == ["hot_work_fire"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject is None
+    assert "fire seen (confidence 0.60)" in hazards[0].reason
+
+
+def test_hot_work_flags_welding_next_to_gas_cylinder():
+    hazards = rules.hot_work_fire([det("welding", WELD), det("gas_cylinder", CYLINDER)])
+    assert ids(hazards) == ["hot_work_fire"]
+    assert "welding 0.25x cylinder height from a gas cylinder" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    ("cylinder", "flagged"),
+    [((0.89, 0.50, 0.94, 0.70), True), ((0.91, 0.50, 0.96, 0.70), False)],
+    ids=["gap-0.39", "gap-0.41"],
+)
+def test_hot_work_cylinder_distance_threshold(cylinder, flagged):
+    found = rules.hot_work_fire([det("welding", WELD), det("gas_cylinder", cylinder)])
+    assert bool(found) is flagged
+
+
+def test_hot_work_uses_aspect_ratio():
+    scene = [det("welding", WELD), det("gas_cylinder", (0.89, 0.50, 0.94, 0.70))]
+    assert rules.hot_work_fire(scene, aspect_ratio=16 / 9) == []  # 0.39 -> 0.69
+
+
+@pytest.mark.parametrize("label", ["welding", "gas_cylinder"])
+def test_hot_work_clear_for_welding_or_cylinder_alone(label):
+    assert rules.hot_work_fire([det(label, WELD)]) == []
+
+
+def test_hot_work_once_per_photo_and_names_both_causes():
+    scene = [
+        det("fire", FIRE, 0.6),
+        det("fire", (0.70, 0.60, 0.80, 0.80), 0.5),
+        det("welding", WELD),
+        det("gas_cylinder", CYLINDER),
+    ]
+    hazards = rules.hot_work_fire(scene)
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 4
+    assert "fire seen" in hazards[0].reason and "welding" in hazards[0].reason
