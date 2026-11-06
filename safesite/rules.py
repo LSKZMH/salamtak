@@ -33,6 +33,7 @@ BORDER_MARGIN = 0.01  # a box this close to an edge is cut off (a cut-off torso 
 WORKER_DOWN_MAX_INSIDE = 0.6  # a person box >= 60% inside a machine/vehicle is its driver
 SUSPENDED_LOAD_FACTOR = 1.0  # crane hook within 1.0 x person height to the side
 SUSPENDED_LOAD_TOP_FRACTION = 0.1  # hook bottom may reach 0.1 x person height below their top
+POWER_LINE_FACTOR = 0.5  # machinery within 0.5 x its own height of a power pole / line
 
 # --- Labels (normalized: lowercase, underscores) ------------------------------
 PERSON, HELMET, NO_HELMET = "person", "helmet", "no_helmet"
@@ -438,6 +439,36 @@ def under_suspended_load(
     return hazards
 
 
+def _unique_boxes(detections: Sequence[Detection]) -> tuple[Box, ...]:
+    return tuple(dict.fromkeys(d.box for d in detections))
+
+
+def power_line_contact(
+    detections: Sequence[Detection], aspect_ratio: float = 1.0
+) -> list[Hazard]:
+    """Machinery overlapping or within 0.5 x its height of a utility pole or power line."""
+    lines = with_labels(detections, {UTILITY_POLE, POWER_LINE})
+    pairs = [
+        (m, line, gap(m.box, line.box, aspect_ratio) / height(m.box))
+        for m in with_labels(detections, {MACHINERY})
+        for line in lines
+    ]
+    close = [p for p in pairs if p[2] <= POWER_LINE_FACTOR]
+    if not close:
+        return []
+    machine, line, distance = min(close, key=lambda p: p[2])
+    where = "overlaps" if distance == 0 else f"is {distance:.2f}x its height from"
+    involved = [d for m, ln, _ in close for d in (m, ln)]
+    return [
+        Hazard.of(
+            "power_line_contact",
+            f"A machine {where} a {_name(line.label)} "
+            f"(danger zone {POWER_LINE_FACTOR}x machine height).",
+            _unique_boxes(involved),
+        )
+    ]
+
+
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
@@ -500,5 +531,6 @@ def evaluate(detections: Sequence[Detection], context: SceneContext | None = Non
         *trip_cord(dets),
         *worker_down(dets, ratio),
         *under_suspended_load(dets, ratio),
+        *power_line_contact(dets, ratio),
     ]
     return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)

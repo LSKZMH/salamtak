@@ -725,3 +725,67 @@ def test_suspended_load_flags_each_person_under_one_hook():
 def test_suspended_load_hook_cutoff_follows_source(source, flagged):
     scene = [person(), src("crane_hook", 0.30, source, HOOK_ABOVE)]
     assert ("under_suspended_load" in ids(rules.evaluate(scene, INDOOR))) is flagged
+
+
+# --- power_line_contact (MACHINE is 0.4 tall: zone 0.5 x 0.4 = 0.2) -------------------------
+MACHINE = (0.20, 0.50, 0.50, 0.90)
+
+
+def test_power_line_flags_machine_near_utility_pole():
+    hazards = rules.power_line_contact([det("machinery", MACHINE), det("utility_pole", (0.60, 0.10, 0.65, 0.90))])
+    assert ids(hazards) == ["power_line_contact"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject is None
+    assert "0.25x its height from a power pole" in hazards[0].reason
+
+
+def test_power_line_flags_machine_overlapping_power_line():
+    hazards = rules.power_line_contact([det("machinery", MACHINE), det("power_line", (0.0, 0.05, 1.0, 0.52))])
+    assert "machine overlaps a power line" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    ("pole", "flagged"),
+    [((0.69, 0.10, 0.74, 0.90), True), ((0.71, 0.10, 0.76, 0.90), False)],
+    ids=["gap-0.19", "gap-0.21"],
+)
+def test_power_line_distance_threshold(pole, flagged):
+    found = rules.power_line_contact([det("machinery", MACHINE), det("utility_pole", pole)])
+    assert bool(found) is flagged
+
+
+@pytest.mark.parametrize(
+    ("line", "flagged"),
+    [((0.0, 0.30, 1.0, 0.35), True), ((0.0, 0.20, 1.0, 0.25), False)],
+    ids=["line-0.15-above", "line-0.25-above"],
+)
+def test_power_line_overhead_line_threshold(line, flagged):
+    found = rules.power_line_contact([det("machinery", MACHINE), det("power_line", line)])
+    assert bool(found) is flagged
+
+
+def test_power_line_uses_aspect_ratio():
+    scene = [det("machinery", MACHINE), det("utility_pole", (0.69, 0.10, 0.74, 0.90))]
+    assert rules.power_line_contact(scene, aspect_ratio=16 / 9) == []  # 0.19 -> 0.34
+
+
+def test_power_line_only_counts_machinery_not_vehicles():
+    scene = [det("vehicle", MACHINE), det("utility_pole", (0.60, 0.10, 0.65, 0.90))]
+    assert rules.power_line_contact(scene) == []
+
+
+def test_power_line_clear_without_poles_or_lines():
+    assert rules.power_line_contact([det("machinery", MACHINE)]) == []
+
+
+def test_power_line_once_per_photo():
+    scene = [
+        det("machinery", MACHINE),
+        det("machinery", (0.55, 0.50, 0.85, 0.90)),
+        det("utility_pole", (0.52, 0.10, 0.54, 0.90)),
+        det("power_line", (0.0, 0.40, 1.0, 0.45)),
+    ]
+    hazards = rules.power_line_contact(scene)
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 4
+    assert "power pole" in hazards[0].reason  # names the nearest pair
