@@ -212,8 +212,11 @@ def analyze(
 
 # ---------- UI ----------
 EXAMPLES = [
-    [str(EXAMPLES_DIR / "site_summer_noon.jpg"), "", 33.5, True, "ar", "Site"],
-    [str(EXAMPLES_DIR / "site_winter_morning.jpg"), "", None, True, "en", "Site"],
+    # Real Wikimedia photos (CC BY-SA, credited in examples/qatar_test/CREDITS.md); faces covered or turned away.
+    # Doha crew at a summer noon with high WBGT: no hard hats + Qatar midday ban + WBGT stop-work.
+    [str(EXAMPLES_DIR / "qatar_test" / "doha_roadside_crew_meeting.jpg"), "2026-07-15 12:30", 33.5, True, "ar", "Site"],
+    # Workers walking away from camera on a winter morning: the helmet check on its own.
+    [str(EXAMPLES_DIR / "qatar_test" / "dubai_workers_walking.jpg"), "2026-11-05 08:00", None, True, "en", "Site"],
     [str(EXAMPLES_DIR / "home_cords_floor.jpg"), "", None, False, "hi", "Home"],  # CC BY-SA, see examples/CREDITS.md
 ]
 
