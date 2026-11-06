@@ -317,3 +317,140 @@ def test_main_returns_2_on_bad_labels(fake_repo: Path, capsys):
 def test_main_returns_1_when_no_photo_could_be_read(fake_repo: Path):
     (fake_repo / "examples" / "qatar_test" / "labels.csv").write_text("filename,hazards\nnope.jpg,\n")
     assert ev.main(["--repo-root", str(fake_repo)]) == 1
+
+
+# ---------- v2: new hazard ids, --only-hazards, combined detector ----------
+V2_IDS = ("worker_down", "under_suspended_load", "power_line_contact", "hot_work_fire",
+          "no_fire_extinguisher", "exposed_rebar", "fall_into_opening")
+
+
+def test_fallback_list_has_the_v2_hazard_ids():
+    assert set(V2_IDS) <= set(ev.CLAUDE_MD_HAZARD_IDS)
+    assert all(ev.hazard_mode(i) == "site" for i in V2_IDS)
+
+
+def test_labelable_ids_keep_rules_order_and_add_fallback_ids():
+    ids = ev.labelable_ids(("no_helmet", "custom_rule"))
+    assert ids[:2] == ("no_helmet", "custom_rule")
+    assert set(V2_IDS) <= set(ids) and len(ids) == len(set(ids))
+
+
+def test_restrict_drops_out_of_scope_hazards_from_both_sides():
+    results = [_result("a.jpg", {"no_helmet", "trip_cord"}, {"trip_cord", "midday_ban"}),
+               _result("b.jpg", {"machinery_zone"}, {"no_helmet"})]
+    a, b = ev.restrict(results, frozenset({"no_helmet", "machinery_zone"}))
+    assert (a.expected, a.predicted) == ({"no_helmet"}, frozenset())
+    assert (b.expected, b.predicted) == ({"machinery_zone"}, {"no_helmet"})
+    assert results[0].predicted == {"trip_cord", "midday_ban"}  # originals untouched
+
+
+def test_restrict_with_no_filter_returns_results_unchanged():
+    results = [_result("a.jpg", {"no_helmet"}, {"trip_cord"})]
+    assert ev.restrict(results, None) == results
+
+
+def test_only_hazards_make_out_of_scope_predictions_not_false_alarms():
+    results = ev.restrict([_result("a.jpg", set(), {"trip_cord", "heat_welfare_gap"})],
+                          frozenset({"no_helmet"}))
+    summary = ev.summarize(results, ev.hazard_stats(results, ["no_helmet"]))
+    assert summary["false_alarms"] == 0 and summary["clean_photos_flagged"] == 0
+
+
+def test_parse_only_hazards_validates_ids():
+    assert ev.parse_only_hazards("no_helmet, machinery_zone", IDS) == {"no_helmet", "machinery_zone"}
+    assert ev.parse_only_hazards(None, IDS) is None
+    with pytest.raises(SystemExit, match="bogus"):
+        ev.parse_only_hazards("no_helmet,bogus", IDS)
+    with pytest.raises(SystemExit, match="empty"):
+        ev.parse_only_hazards(" , ", IDS)
+
+
+def test_report_ids_list_every_scored_hazard_even_if_never_seen():
+    results = [_result("a.jpg", set(), set())]
+    only = frozenset({"no_helmet", "fall_no_harness"})
+    assert ev.report_ids(results, IDS, only) == ["no_helmet", "fall_no_harness"]
+    assert ev.report_ids(results, IDS, None) == []
+
+
+def test_unproducible_label_warnings_name_ids_the_rules_lack():
+    photos = [ev.LabelledPhoto("a.jpg", frozenset({"no_helmet", "worker_down"}))]
+    warnings = ev.unproducible_warnings(photos, ("no_helmet",))
+    assert len(warnings) == 1 and "worker_down" in warnings[0]
+
+
+def test_parse_costs_accepts_total_spent_with_approx_sign():
+    costs = ev.parse_costs("| a | cost |\n|---|---|\n| x | $2.01 |\n\n**Total spent: ≈ $2.01** (Jobs ...)\n")
+    assert costs.stated_total == 2.01
+
+
+def test_combined_detector_spec_builds_trained_plus_open_vocab(monkeypatch):
+    import types as pytypes
+
+    made = []
+
+    class FakeYolo:
+        name = "yolo"
+
+        def __init__(self, **kwargs):
+            made.append(kwargs)
+
+    class FakeOV:
+        name = "yoloe"
+
+    class FakeCombined:
+        def __init__(self, primary, open_vocab):
+            self.name = f"{primary.name} + {open_vocab.name}"
+
+    detect = pytypes.SimpleNamespace(YoloDetector=FakeYolo, CombinedDetector=FakeCombined)
+    openvocab = pytypes.SimpleNamespace(OpenVocabDetector=FakeOV)
+    monkeypatch.setattr(ev, "_import_safesite", lambda name: {"detect": detect, "openvocab": openvocab}[name])
+    detector, is_mock = ev.load_detector("combined", "w.pt")
+    assert detector.name == "yolo + yoloe" and is_mock is False and made == [{"weights_path": "w.pt"}]
+
+
+def test_main_only_hazards_end_to_end(fake_repo: Path, capsys):
+    out_json = fake_repo / "eval.json"
+    code = ev.main(["--repo-root", str(fake_repo), "--allow-skipped", "--only-hazards", "midday_ban",
+                    "--json", str(out_json)])
+    report = capsys.readouterr().out
+    assert code == 0 and "Scored hazards only: midday_ban" in report
+    assert "| `midday_ban` | 1 | 1 | 100% | 0 / 1 | 0% |" in report
+    assert "`no_helmet`" not in report  # mock's no_helmet on the clean photo is ignored
+    data = json.loads(out_json.read_text())
+    assert data["only_hazards"] == ["midday_ban"] and data["summary"]["false_alarms"] == 0
+
+
+# ---------- --space: score the live Space ----------
+SPACE_HTML = ("<div role='status'><div class='ss-score ss-bad'>50/100 · Needs attention</div>"
+              "<p><strong>2 High · 0 Medium</strong> hazards<br>Photo time: 2026-11-05 08:00 (override)<br>"
+              "Detector: YOLO26 (plitip/team-qh-091-safesite@abc1234) + YOLOE-26 &amp; co · 1.37 s</p></div>")
+
+
+def test_parse_space_status_reads_detector_and_server_seconds():
+    assert ev.parse_space_status(SPACE_HTML) == (
+        "YOLO26 (plitip/team-qh-091-safesite@abc1234) + YOLOE-26 & co", 1.37)
+    with pytest.raises(ValueError, match="Space"):
+        ev.parse_space_status("<div>error</div>")
+
+
+@pytest.mark.parametrize("table", [
+    {"headers": ["Hazard", "Severity", "Reason"],
+     "data": [["no_helmet", "High", "a"], ["midday_ban", "High", "b"]]},
+    [["no_helmet", "High", "a"], ["midday_ban", "High", "b"]],
+])
+def test_space_hazard_ids_from_dataframe_payload(table):
+    assert ev.space_hazard_ids(table) == {"no_helmet", "midday_ban"}
+
+
+def test_space_hazard_ids_empty_table():
+    assert ev.space_hazard_ids({"headers": ["Hazard"], "data": [[None, None, None]]}) == frozenset()
+    assert ev.space_hazard_ids(None) == frozenset()
+
+
+def test_space_inputs_pin_the_time_so_the_space_never_uses_now():
+    photo = ev.LabelledPhoto("a.jpg", frozenset(), wbgt_c=33.0, outdoor=False, mode="home")
+    args = ev.space_inputs(photo, exif_taken=None)
+    assert args == {"time_override": "2026-01-15 08:00", "wbgt": 33.0, "outdoor": False,
+                    "lang": "en", "mode": "Home"}
+    dated = ev.LabelledPhoto("b.jpg", frozenset(), taken_at=datetime(2026, 7, 1, 12, 0))
+    assert ev.space_inputs(dated, datetime(2025, 1, 1))["time_override"] == "2026-07-01 12:00"
