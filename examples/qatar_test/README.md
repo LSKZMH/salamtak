@@ -16,7 +16,7 @@ One row per photo in `labels.csv`; put the photo in this folder.
 | column | required | value |
 |---|---|---|
 | `filename` | yes | photo file name in this folder |
-| `hazards` | yes (may be blank) | hazard ids present, separated by `;`. Blank = clean photo. Ids: `no_helmet`, `machinery_zone`, `fall_no_harness`, `midday_ban`, `wbgt_stop`, `no_vest_near_vehicle`, `heat_welfare_gap`, `trip_cord`; Home mode: `home_trip`, `home_slip`, `home_child_reach` |
+| `hazards` | yes (may be blank) | hazard ids present, separated by `;`. Blank = clean photo. Ids: `no_helmet`, `machinery_zone`, `fall_no_harness`, `midday_ban`, `wbgt_stop`, `no_vest_near_vehicle`, `heat_welfare_gap`, `trip_cord`, `worker_down`, `under_suspended_load`, `power_line_contact`, `hot_work_fire`, `no_fire_extinguisher`, `exposed_rebar`, `fall_into_opening`; Home mode: `home_trip`, `home_slip`, `home_child_reach` |
 | `taken_at` | no | `YYYY-MM-DD HH:MM` Doha time. Blank = photo EXIF time, else a winter morning (no heat-ban hazard) |
 | `wbgt_c` | no | WBGT in °C, if measured. Required when `wbgt_stop` is labelled |
 | `outdoor` | no | `true` / `false` (default `true`) |
