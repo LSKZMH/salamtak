@@ -19,6 +19,16 @@ needs_yolo = pytest.mark.skipif(
 )
 
 
+@pytest.mark.parametrize("value, expected", [(None, "dflt"), ("", "dflt"), ("   ", "dflt"), (" abc123 ", "abc123")])
+def test_env_treats_blank_space_variables_as_unset(monkeypatch, value, expected):
+    # A Space variable can exist but be empty; "" as a revision builds .../resolve//best.pt (404).
+    if value is None:
+        monkeypatch.delenv("SAFESITE_TEST_VAR", raising=False)
+    else:
+        monkeypatch.setenv("SAFESITE_TEST_VAR", value)
+    assert detect._env("SAFESITE_TEST_VAR", "dflt") == expected
+
+
 def test_check_labels_accepts_exact_unified_classes():
     detect.check_labels(set(UNIFIED_CLASSES))
 
