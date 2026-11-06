@@ -28,9 +28,15 @@ VEST, NO_VEST, MACHINERY, VEHICLE = "vest", "no_vest", "machinery", "vehicle"
 HARNESS, SCAFFOLD, LADDER = "harness", "scaffold", "ladder"
 SHADE_TENT, WATER_COOLER, CORD, HOSE = "shade_tent", "water_cooler", "cord", "hose"
 WET_FLOOR, KNIFE, CHEMICALS = "wet_floor", "knife", "chemicals"
+# Raw YOLOE prompt names (e.g. the mock's "extension cord") normalize to these, so accept both.
+EXTENSION_CORD, CLEANING_CHEMICALS = "extension_cord", "cleaning_chemicals"
+CORD_LABELS = frozenset({CORD, EXTENSION_CORD})
+CHILD_REACH_LABELS = frozenset({KNIFE, CHEMICALS, CLEANING_CHEMICALS})
 
 OPEN_VOCAB_LABELS = frozenset(
-    {HARNESS, SCAFFOLD, LADDER, SHADE_TENT, WATER_COOLER, CORD, HOSE, WET_FLOOR, KNIFE, CHEMICALS}
+    {HARNESS, SCAFFOLD, LADDER, SHADE_TENT, WATER_COOLER, HOSE, WET_FLOOR}
+    | CORD_LABELS
+    | CHILD_REACH_LABELS
 )
 DISPLAY_NAME = {MACHINERY: "machine", NO_HELMET: "bare head", WET_FLOOR: "wet floor"}
 
@@ -236,7 +242,7 @@ def no_vest_near_vehicle(
 
 
 def _cords_in_walkway(
-    detections: Sequence[Detection], labels: Collection[str] = (CORD, HOSE)
+    detections: Sequence[Detection], labels: Collection[str] = CORD_LABELS | {HOSE}
 ) -> list[Detection]:
     return [c for c in with_labels(detections, labels) if c.box[3] > WALKWAY_TOP_Y]
 
@@ -274,6 +280,7 @@ def heat_hazards(detections: Sequence[Detection], context: SceneContext) -> list
             workers,
             shade_seen=bool(with_labels(detections, {SHADE_TENT})),
             water_seen=bool(with_labels(detections, {WATER_COOLER})),
+            taken_at=context.taken_at,
         ),
     )
     return [h for h in found if h is not None]
@@ -282,7 +289,7 @@ def heat_hazards(detections: Sequence[Detection], context: SceneContext) -> list
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
-    cords = _cords_in_walkway(detections, (CORD,))
+    cords = _cords_in_walkway(detections, CORD_LABELS)
     if not cords:
         return []
     return [
@@ -311,7 +318,7 @@ def home_slip(detections: Sequence[Detection]) -> list[Hazard]:
 
 def home_child_reach(detections: Sequence[Detection]) -> list[Hazard]:
     """Knife or chemicals at low height (centred in the lower half of the frame)."""
-    reachable = with_labels(detections, {KNIFE, CHEMICALS})
+    reachable = with_labels(detections, CHILD_REACH_LABELS)
     items = [d for d in reachable if centre_y(d.box) >= CHILD_REACH_MIN_Y]
     if not items:
         return []
