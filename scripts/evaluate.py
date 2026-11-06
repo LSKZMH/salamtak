@@ -18,8 +18,12 @@ Usage (from the repo root):
   python scripts/evaluate.py                                # mock detector
   python scripts/evaluate.py --detector yolo                # fine-tuned YOLO26 from the Hub
   python scripts/evaluate.py --detector yolo --weights best.pt
-  python scripts/evaluate.py --detector safesite.detect:CombinedDetector   # any detector class
-  python scripts/evaluate.py --threads 2 --json eval.json   # 2 threads ~ free Space CPU
+  python scripts/evaluate.py --detector combined           # trained YOLO26 + YOLOE (what the Space runs)
+  python scripts/evaluate.py --detector package.module:Name # any detector class
+  python scripts/evaluate.py --threads 8 --json eval.json   # 8 threads = cpu-upgrade Space
+  python scripts/evaluate.py --labels other/labels.csv --only-hazards no_helmet,machinery_zone
+      score only these ids; other predicted hazards are ignored, not counted as false alarms
+      (for outside benchmarks that don't label e.g. trip_cord or the heat rules)
 
 Exit codes: 0 ok, 1 no photo could be read, 2 bad labels.csv, 3 some photos skipped
 (their hazards are excluded from every number; pass --allow-skipped to accept that).
@@ -64,10 +68,12 @@ TIME_HAZARD, WBGT_HAZARD = "midday_ban", "wbgt_stop"  # rules that need an input
 WBGT_CONTEXT_FIELDS = ("wbgt_c", "wbgt")
 EXIT_OK, EXIT_NO_PHOTOS, EXIT_BAD_LABELS, EXIT_SKIPPED = 0, 1, 2, 3
 
-# Fallback when safesite.types has no HAZARD_IDS. Mirrors the CLAUDE.md hazard table.
+# Fallback when safesite.types has no HAZARD_IDS. Mirrors the CLAUDE.md hazard table + PLAN-v2.
 CLAUDE_MD_HAZARD_IDS = (
     "no_helmet", "machinery_zone", "fall_no_harness", "midday_ban", "wbgt_stop",
     "no_vest_near_vehicle", "heat_welfare_gap", "trip_cord",
+    "worker_down", "under_suspended_load", "power_line_contact", "hot_work_fire",
+    "no_fire_extinguisher", "exposed_rebar", "fall_into_opening",
     "home_trip", "home_slip", "home_child_reach",
 )
 
@@ -252,7 +258,8 @@ def load_labels(path: Path, known_ids: Collection[str]) -> list[LabelledPhoto]:
 
 # ---------- costs ----------
 _DOLLARS = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
-_TOTAL = re.compile(r"\*\*\s*total\s*:?\s*\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*\*\*", re.IGNORECASE)
+# "**Total: $X**" or "**Total spent: ≈ $X**"
+_TOTAL = re.compile(r"\*\*\s*total\b[^$*\n]*\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*\*\*", re.IGNORECASE)
 
 
 def _dollars(text: str) -> float | None:
@@ -315,6 +322,37 @@ def ids_to_report(results: Sequence[PhotoResult], known_ids: Sequence[str]) -> l
     """Known ids that were labelled or predicted at least once, in table order."""
     seen = set().union(*(r.expected | r.predicted for r in results)) if results else set()
     return [i for i in known_ids if i in seen] + sorted(seen - set(known_ids))
+
+
+def parse_only_hazards(text: str | None, known_ids: Collection[str]) -> frozenset[str] | None:
+    """--only-hazards value -> id set (None = score every hazard)."""
+    if text is None:
+        return None
+    ids = frozenset(part.strip() for part in text.split(",") if part.strip())
+    if not ids:
+        raise SystemExit("--only-hazards is empty")
+    unknown = sorted(ids - set(known_ids))
+    if unknown:
+        raise SystemExit(f"--only-hazards: unknown hazard id(s) {', '.join(unknown)}")
+    return ids
+
+
+def restrict(results: Sequence[PhotoResult], only: frozenset[str] | None) -> list[PhotoResult]:
+    """Keep only the scored ids on both sides, so an unscored prediction is neither a catch nor
+    a false alarm. Returns new results; the inputs are not changed."""
+    if only is None:
+        return list(results)
+    return [dataclasses.replace(r, expected=r.expected & only, predicted=r.predicted & only)
+            for r in results]
+
+
+def report_ids(results: Sequence[PhotoResult], known_ids: Sequence[str],
+               only: frozenset[str] | None) -> list[str]:
+    """Rows for the per-hazard table: every scored id when filtering (a zero row is information),
+    else the ids that were labelled or predicted."""
+    if only is not None:
+        return [i for i in known_ids if i in only] + sorted(only - set(known_ids))
+    return ids_to_report(results, known_ids)
 
 
 def summarize(results: Sequence[PhotoResult], stats: Sequence[HazardStats]) -> dict[str, Any]:
@@ -388,17 +426,28 @@ def _mock_detector() -> Any:
         return BuiltinMockDetector()
 
 
+def _import_safesite(name: str) -> Any:
+    return importlib.import_module(f"safesite.{name}")
+
+
+def _yolo(weights: str | None) -> Any:
+    detect = _import_safesite("detect")
+    return detect.YoloDetector(weights_path=weights) if weights else detect.YoloDetector()
+
+
 def load_detector(spec: str, weights: str | None) -> tuple[Any, bool]:
-    """'mock' | 'yolo' | 'package.module:Name'. Returns (detector, is_mock)."""
+    """'mock' | 'yolo' | 'combined' | 'package.module:Name'. Returns (detector, is_mock).
+    'combined' = trained YOLO26 + YOLOE open-vocab finder, as the Space runs by default."""
     if spec == "mock":
         return _mock_detector(), True
     if spec == "yolo":
-        from safesite import detect
-
-        return (detect.YoloDetector(weights_path=weights) if weights else detect.YoloDetector()), False
+        return _yolo(weights), False
+    if spec == "combined":
+        detect, openvocab = _import_safesite("detect"), _import_safesite("openvocab")
+        return detect.CombinedDetector(_yolo(weights), openvocab.OpenVocabDetector()), False
     module_name, _, attr = spec.partition(":")
     if not attr:
-        raise SystemExit(f"--detector must be mock, yolo or module:Name, got {spec!r}")
+        raise SystemExit(f"--detector must be mock, yolo, combined or module:Name, got {spec!r}")
     target = getattr(importlib.import_module(module_name), attr)
     detector = target() if isinstance(target, type) else target
     return detector, "mock" in type(detector).__name__.lower()
@@ -422,12 +471,25 @@ def load_pipeline(detector_spec: str, weights: str | None) -> Pipeline:
 
 
 def known_hazard_ids() -> tuple[str, ...]:
+    """Ids the loaded rules can produce."""
     try:
         from safesite.types import HAZARD_IDS
 
         return tuple(HAZARD_IDS)
     except ImportError:
         return CLAUDE_MD_HAZARD_IDS
+
+
+def labelable_ids(rule_ids: Sequence[str]) -> tuple[str, ...]:
+    """Ids allowed in labels.csv: the rules' ids plus the fallback list, so photos can be labelled
+    with a new hazard before (or without) the rules that detect it. Such labels count as misses."""
+    return tuple(rule_ids) + tuple(i for i in CLAUDE_MD_HAZARD_IDS if i not in rule_ids)
+
+
+def unproducible_warnings(photos: Sequence[LabelledPhoto], rule_ids: Collection[str]) -> list[str]:
+    labelled = set().union(*(p.hazards for p in photos)) if photos else set()
+    return [f"labelled {i} but these rules can't produce it (every such label is a miss)"
+            for i in sorted(labelled - set(rule_ids))]
 
 
 # ---------- running ----------
@@ -556,14 +618,19 @@ def headline_lines(summary: dict[str, Any]) -> list[str]:
 
 
 def render_report(pipeline: Pipeline, stats: Sequence[HazardStats], summary: dict[str, Any],
-                  outcome: RunOutcome, costs_block: Sequence[str]) -> str:
+                  outcome: RunOutcome, costs_block: Sequence[str],
+                  only: frozenset[str] | None = None, title: str = "Qatar test photos") -> str:
     skipped = outcome.skipped
-    lines = ["# SafeSite evaluation: Qatar test photos", ""]
+    lines = [f"# SafeSite evaluation: {title}", ""]
     if pipeline.is_mock:
         lines += ["> **MOCK DETECTOR: these numbers are not real. Do not put them on a slide.**", ""]
     skipped_note = f" ({len(skipped)} skipped)" if skipped else ""
     lines += [f"Detector: {pipeline.detector_name}  ",
-              f"Photos evaluated: {summary['photos']}{skipped_note}", "", "## Per hazard", ""]
+              f"Photos evaluated: {summary['photos']}{skipped_note}"]
+    if only is not None:
+        lines += ["", f"Scored hazards only: {', '.join(sorted(only))} "
+                      "(other predicted hazards are ignored, not counted as false alarms)"]
+    lines += ["", "## Per hazard", ""]
     lines += hazard_table(stats)
     lines += ["", "## Headline", ""]
     if skipped:
@@ -580,10 +647,13 @@ def render_report(pipeline: Pipeline, stats: Sequence[HazardStats], summary: dic
 
 
 def write_json(path: Path, pipeline: Pipeline, stats: Sequence[HazardStats],
-               summary: dict[str, Any], outcome: RunOutcome, costs: CostSummary | None) -> None:
+               summary: dict[str, Any], outcome: RunOutcome, costs: CostSummary | None,
+               only: frozenset[str] | None = None, threads: int | None = None) -> None:
     payload = {
         "detector": pipeline.detector_name,
         "mock": pipeline.is_mock,
+        "only_hazards": sorted(only) if only is not None else None,
+        "threads": threads,
         "summary": summary,
         "per_hazard": [{**dataclasses.asdict(s), "catch_rate": s.catch_rate,
                         "false_alarm_rate": s.false_alarm_rate} for s in stats],
@@ -604,11 +674,16 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--labels", type=Path, help=f"default: <repo>/{DEFAULT_LABELS.as_posix()}")
     parser.add_argument("--images", type=Path, help="photo folder (default: the labels file's folder)")
     parser.add_argument("--costs", type=Path, help=f"default: <repo>/{DEFAULT_COSTS}")
-    parser.add_argument("--detector", default="mock", help="mock | yolo | package.module:Name")
+    parser.add_argument("--detector", default="mock",
+                        help="mock | yolo | combined | package.module:Name")
     parser.add_argument("--weights", help="local .pt for --detector yolo (default: download from the Hub)")
-    parser.add_argument("--threads", type=int, help="limit CPU threads (free Space CPU has 2)")
+    parser.add_argument("--threads", type=int,
+                        help="limit CPU threads to the Space's vCPUs (cpu-basic 2, cpu-upgrade 8)")
     parser.add_argument("--warmup", type=int, default=DEFAULT_WARMUP_RUNS,
                         help="untimed detector runs before the first timed photo")
+    parser.add_argument("--only-hazards", metavar="ID,ID",
+                        help="score only these hazard ids; others are ignored, not false alarms")
+    parser.add_argument("--title", default="Qatar test photos", help="report heading")
     parser.add_argument("--json", type=Path, help="also write full results here")
     parser.add_argument("--allow-skipped", action="store_true",
                         help=f"exit {EXIT_OK} even if some photos could not be read "
@@ -619,7 +694,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 def limit_threads(threads: int | None) -> None:
     if threads is None:
         return
-    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "SAFESITE_THREADS"):
         os.environ[var] = str(threads)
     try:
         import torch
@@ -636,19 +711,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     limit_threads(args.threads)
     labels_path = args.labels or repo / DEFAULT_LABELS
     costs_path = args.costs or repo / DEFAULT_COSTS
+    rule_ids = known_hazard_ids()
+    label_ids = labelable_ids(rule_ids)
+    only = parse_only_hazards(args.only_hazards, label_ids)
     try:
-        photos = load_labels(labels_path, known_hazard_ids())
+        photos = load_labels(labels_path, label_ids)
     except (OSError, LabelError) as exc:
         print(f"error: can't use {labels_path}:\n{exc}", file=sys.stderr)
         return EXIT_BAD_LABELS
     pipeline = load_pipeline(args.detector, args.weights)
-    outcome = run_all(pipeline, photos, args.images or labels_path.parent, args.warmup)
-    stats = hazard_stats(outcome.results, ids_to_report(outcome.results, known_hazard_ids()))
+    raw = run_all(pipeline, photos, args.images or labels_path.parent, args.warmup)
+    scored = photos if only is None else [
+        dataclasses.replace(p, hazards=p.hazards & only) for p in photos]
+    outcome = RunOutcome(restrict(raw.results, only), raw.skipped,
+                         unproducible_warnings(scored, rule_ids) + raw.warnings)
+    stats = hazard_stats(outcome.results, report_ids(outcome.results, label_ids, only))
     summary = summarize(outcome.results, stats)
     costs = parse_costs(costs_path.read_text(encoding="utf-8")) if costs_path.is_file() else None
-    print(render_report(pipeline, stats, summary, outcome, cost_lines(costs, costs_path)))
+    report = render_report(pipeline, stats, summary, outcome, cost_lines(costs, costs_path),
+                           only, args.title)
+    print(report)
     if args.json:
-        write_json(args.json, pipeline, stats, summary, outcome, costs)
+        write_json(args.json, pipeline, stats, summary, outcome, costs, only, args.threads)
     if not outcome.results:
         return EXIT_NO_PHOTOS
     return EXIT_SKIPPED if outcome.skipped and not args.allow_skipped else EXIT_OK
