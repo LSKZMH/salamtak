@@ -1,4 +1,4 @@
-"""SafeSite Qatar: hazard rules, Qatar heat rules, safety score and worker alerts.
+"""Salamtak سلامتك: hazard rules, Qatar heat rules, safety score and worker alerts.
 
 Typical use from app.py::
 

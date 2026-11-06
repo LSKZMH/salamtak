@@ -16,10 +16,10 @@ datasets:
   - Francesco/construction-safety-gsnvb
 ---
 
-# SafeSite Qatar — PPE & site-hazard detector (YOLO26s)
+# Salamtak سلامتك — PPE & site-hazard detector (YOLO26s)
 
 Fine-tuned **Ultralytics YOLO26s** that finds people, helmets, missing helmets, vests, missing vests, machinery and vehicles in construction-site photos.
-It is the trained detector inside **SafeSite Qatar**, built at the Qai × Hugging Face Hackathon (Doha, 5–7 Nov 2026). A plain-Python rules engine (no LLM) turns these detections into hazards, a 0–100 safety score and multilingual worker alerts.
+It is the trained detector inside **Salamtak سلامتك** ("your safety"), built at the Qai × Hugging Face Hackathon (Doha, 5–7 Nov 2026). A plain-Python rules engine (no LLM) turns these detections into hazards, a 0–100 safety score and multilingual worker alerts.
 
 - **Demo Space:** [plitip/team-qh-091-safesite-app](https://huggingface.co/spaces/plitip/team-qh-091-safesite-app)
 - **Weights:** `best.pt` in this repo · training log `results.csv` · summary `metrics.json`
@@ -86,7 +86,7 @@ Dropped source classes: barricade, dumpster, gloves, mask, no-mask, safety net, 
 
 - **`person` is weak (mAP50 0.17).** The largest source, hard-hat-detection, shows many people but labels only their heads, so most people in training are unlabelled and the model learns to ignore them. Rely on helmet / no_helmet boxes (head-level) for PPE checks; a stock COCO person detector or YOLOE is better for counting people.
 - **Vest / no_vest are weak (0.19 / 0.08)** for the same reason — vests appear in hard-hat-detection photos without labels — plus few examples (~1,300 / ~900 boxes).
-- **Machinery and vehicle are very sparse** in training data (~190 and ~100 boxes) and in validation (14 and 8 boxes), so their scores are unreliable. The SafeSite app uses open-vocabulary YOLOE for extra objects.
+- **Machinery and vehicle are very sparse** in training data (~190 and ~100 boxes) and in validation (14 and 8 boxes), so their scores are unreliable. The Salamtak app uses open-vocabulary YOLOE for extra objects.
 - Small, distant or heavily occluded heads are often missed; "no_helmet" can be confused with caps, scarves or hair.
 - Training photos are mostly not from Qatar; lighting, heat haze, clothing (e.g. head coverings under helmets) and site layouts in the Gulf may lower accuracy. Our separate Qatar test photos measure this honestly.
 - A detector only sees what is in frame; absence of a detection is not proof of safety.

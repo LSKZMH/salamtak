@@ -1,5 +1,5 @@
 ---
-title: SafeSite Qatar
+title: Salamtak سلامتك
 emoji: 🦺
 colorFrom: red
 colorTo: yellow
@@ -20,7 +20,7 @@ models:
   - plitip/team-qh-091-safesite
 ---
 
-# 🦺 SafeSite Qatar
+# 🦺 Salamtak سلامتك
 
 One photo of a construction site → detected hazards, a 0–100 safety score, and short alerts in workers' languages
 (English, Arabic, Hindi, Bengali, Nepali, Urdu, Malayalam). Built for the Qai × Hugging Face Hackathon, Doha, Nov 2026.

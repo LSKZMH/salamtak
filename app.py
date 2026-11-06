@@ -1,4 +1,4 @@
-"""SafeSite Qatar — Gradio Space entry point.
+"""Salamtak سلامتك — Gradio Space entry point.
 
 Photo -> detector -> rules engine -> score + annotated image + alerts. No LLM anywhere.
 All scoring goes through safesite.pipeline.analyze_image; scripts/evaluate.py should call it too
@@ -222,9 +222,9 @@ EXAMPLES = [
 
 
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="SafeSite Qatar") as demo:
+    with gr.Blocks(title="Salamtak سلامتك") as demo:
         gr.Markdown(
-            "# SafeSite Qatar\n"
+            "# Salamtak سلامتك\n"
             "One photo of a site → hazards, a 0–100 safety score, and short alerts in workers' languages. "
             "Includes Qatar's midday summer work ban and the WBGT stop-work rule. No LLM in the loop.  \n"
             f"*{DISCLAIMER}*"
