@@ -24,9 +24,14 @@ from PIL import Image
 
 from safesite.types import UNIFIED_CLASSES, Detection, Mode
 
-MODEL_REPO = os.environ.get("SAFESITE_MODEL_REPO", "plitip/team-qh-091-safesite")
-WEIGHTS_FILE = os.environ.get("SAFESITE_WEIGHTS_FILE", "best.pt")
-MODEL_REVISION = os.environ.get("SAFESITE_MODEL_REVISION")  # commit SHA; None = latest (dev only)
+def _env(name: str, default: str | None = None) -> str | None:
+    """A Space variable can exist but be blank; treat that as unset (a "" revision would 404)."""
+    return (os.environ.get(name) or "").strip() or default
+
+
+MODEL_REPO = _env("SAFESITE_MODEL_REPO", "plitip/team-qh-091-safesite")
+WEIGHTS_FILE = _env("SAFESITE_WEIGHTS_FILE", "best.pt")
+MODEL_REVISION = _env("SAFESITE_MODEL_REVISION")  # commit SHA; None = latest (dev only)
 PREDICT_CONF = 0.25  # model-side floor; the shared MIN_CONFIDENCE in types.py decides what counts
 IMG_SIZE = 640
 MAX_DETECTIONS = 100
@@ -92,7 +97,7 @@ class YoloDetector:
         import torch
         from ultralytics import YOLO  # deferred: heavy import, only needed for the real model
 
-        torch.set_num_threads(threads or int(os.environ.get("SAFESITE_THREADS", os.cpu_count() or 2)))
+        torch.set_num_threads(threads or int(_env("SAFESITE_THREADS") or os.cpu_count() or 2))
         if weights_path is None:
             from huggingface_hub import hf_hub_download
 
