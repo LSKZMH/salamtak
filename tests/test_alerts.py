@@ -21,6 +21,24 @@ def test_every_hazard_id_has_every_language():
         assert set(table[hazard_id]) == set(LANGUAGES), hazard_id
 
 
+V2_HAZARD_IDS = (
+    "worker_down",
+    "under_suspended_load",
+    "power_line_contact",
+    "hot_work_fire",
+    "no_fire_extinguisher",
+    "exposed_rebar",
+    "fall_into_opening",
+)
+
+
+@pytest.mark.parametrize("hazard_id", V2_HAZARD_IDS)
+def test_v2_hazards_have_an_english_alert_and_unverified_drafts(hazard_id):
+    phrases = load_alerts()[hazard_id]
+    assert phrases["en"].text and phrases["en"].verified is True
+    assert all(not phrases[lang].verified for lang in LANGUAGES if lang != "en")
+
+
 def test_only_english_is_marked_verified():
     for hazard_id, phrases in load_alerts().items():
         for language, alert in phrases.items():

@@ -101,5 +101,68 @@
     "ne": {"text": "चक्कु र रसायनहरू बालबालिकाको पहुँचबाट टाढा राख्नुहोस्।", "verified": false},
     "ur": {"text": "چاقو اور کیمیکل بچوں کی پہنچ سے دور رکھیں۔", "verified": false},
     "ml": {"text": "കത്തികളും രാസവസ്തുക്കളും കുട്ടികൾക്ക് എത്താത്തിടത്ത് വയ്ക്കുക.", "verified": false}
+  },
+  "worker_down": {
+    "en": {"text": "Check on the worker on the ground now. Call for help if they don't respond.", "verified": true},
+    "ar": {"text": "تفقّد العامل الملقى على الأرض الآن. اطلب المساعدة إذا لم يستجب.", "verified": false},
+    "hi": {"text": "ज़मीन पर पड़े मज़दूर को अभी देखें। जवाब न दे तो मदद बुलाएँ।", "verified": false},
+    "bn": {"text": "মাটিতে পড়ে থাকা শ্রমিককে এখনই দেখুন। সাড়া না দিলে সাহায্য ডাকুন।", "verified": false},
+    "ne": {"text": "भुइँमा परेका कामदारलाई अहिले नै हेर्नुहोस्। जवाफ नदिए मद्दत बोलाउनुहोस्।", "verified": false},
+    "ur": {"text": "زمین پر پڑے مزدور کو ابھی دیکھیں۔ جواب نہ دے تو مدد بلائیں۔", "verified": false},
+    "ml": {"text": "നിലത്ത് കിടക്കുന്ന തൊഴിലാളിയെ ഇപ്പോൾ തന്നെ നോക്കുക. പ്രതികരിക്കുന്നില്ലെങ്കിൽ സഹായം വിളിക്കുക.", "verified": false}
+  },
+  "under_suspended_load": {
+    "en": {"text": "Move out from under the load now.", "verified": true},
+    "ar": {"text": "ابتعد من تحت الحمولة الآن.", "verified": false},
+    "hi": {"text": "अभी लटके भार के नीचे से हटें।", "verified": false},
+    "bn": {"text": "এখনই ঝুলন্ত ভারের নিচ থেকে সরে যান।", "verified": false},
+    "ne": {"text": "अहिले नै झुण्डिएको भारमुनिबाट हट्नुहोस्।", "verified": false},
+    "ur": {"text": "ابھی لٹکے ہوئے بوجھ کے نیچے سے ہٹ جائیں۔", "verified": false},
+    "ml": {"text": "ഇപ്പോൾ തന്നെ തൂങ്ങിക്കിടക്കുന്ന ഭാരത്തിന് താഴെ നിന്ന് മാറുക.", "verified": false}
+  },
+  "power_line_contact": {
+    "en": {"text": "Stop the machine. It is too close to power lines.", "verified": true},
+    "ar": {"text": "أوقف الآلة. إنها قريبة جدًا من خطوط الكهرباء.", "verified": false},
+    "hi": {"text": "मशीन रोकें। यह बिजली की तारों के बहुत पास है।", "verified": false},
+    "bn": {"text": "মেশিন থামান। এটি বিদ্যুতের তারের খুব কাছে।", "verified": false},
+    "ne": {"text": "मेसिन रोक्नुहोस्। यो बिजुलीको तारको धेरै नजिक छ।", "verified": false},
+    "ur": {"text": "مشین روکیں۔ یہ بجلی کی تاروں کے بہت قریب ہے۔", "verified": false},
+    "ml": {"text": "യന്ത്രം നിർത്തുക. ഇത് വൈദ്യുതി ലൈനുകൾക്ക് വളരെ അടുത്താണ്.", "verified": false}
+  },
+  "hot_work_fire": {
+    "en": {"text": "Stop hot work. Move gas cylinders and fire away.", "verified": true},
+    "ar": {"text": "أوقف أعمال اللحام. أبعد أسطوانات الغاز والنار.", "verified": false},
+    "hi": {"text": "वेल्डिंग का काम रोकें। गैस सिलेंडर और आग को दूर करें।", "verified": false},
+    "bn": {"text": "ওয়েল্ডিংয়ের কাজ বন্ধ করুন। গ্যাস সিলিন্ডার ও আগুন দূরে সরান।", "verified": false},
+    "ne": {"text": "वेल्डिङको काम रोक्नुहोस्। ग्यास सिलिन्डर र आगो टाढा सार्नुहोस्।", "verified": false},
+    "ur": {"text": "ویلڈنگ کا کام روکیں۔ گیس سلنڈر اور آگ کو دور کریں۔", "verified": false},
+    "ml": {"text": "വെൽഡിംഗ് ജോലി നിർത്തുക. ഗ്യാസ് സിലിണ്ടറുകളും തീയും മാറ്റുക.", "verified": false}
+  },
+  "no_fire_extinguisher": {
+    "en": {"text": "Bring a fire extinguisher before hot work.", "verified": true},
+    "ar": {"text": "أحضر طفاية حريق قبل أعمال اللحام.", "verified": false},
+    "hi": {"text": "वेल्डिंग से पहले अग्निशामक यंत्र लाएँ।", "verified": false},
+    "bn": {"text": "ওয়েল্ডিংয়ের আগে অগ্নিনির্বাপক যন্ত্র আনুন।", "verified": false},
+    "ne": {"text": "वेल्डिङ गर्नुअघि आगो निभाउने यन्त्र ल्याउनुहोस्।", "verified": false},
+    "ur": {"text": "ویلڈنگ سے پہلے آگ بجھانے والا آلہ لائیں۔", "verified": false},
+    "ml": {"text": "വെൽഡിംഗിന് മുമ്പ് അഗ്നിശമന ഉപകരണം കൊണ്ടുവരിക.", "verified": false}
+  },
+  "exposed_rebar": {
+    "en": {"text": "Cap the exposed rebar ends.", "verified": true},
+    "ar": {"text": "غطِّ أطراف حديد التسليح المكشوفة.", "verified": false},
+    "hi": {"text": "खुली सरिया के सिरों पर कैप लगाएँ।", "verified": false},
+    "bn": {"text": "খোলা রডের মাথায় ক্যাপ লাগান।", "verified": false},
+    "ne": {"text": "खुला डन्डीका टुप्पामा क्याप लगाउनुहोस्।", "verified": false},
+    "ur": {"text": "کھلے سریے کے سروں پر کیپ لگائیں۔", "verified": false},
+    "ml": {"text": "തുറന്നുകിടക്കുന്ന കമ്പിയുടെ അറ്റങ്ങൾ മൂടുക.", "verified": false}
+  },
+  "fall_into_opening": {
+    "en": {"text": "Keep back from the opening. Cover or guard it.", "verified": true},
+    "ar": {"text": "ابتعد عن الفتحة. غطِّها أو ضع حاجزًا حولها.", "verified": false},
+    "hi": {"text": "खुले गड्ढे से दूर रहें। उसे ढकें या घेरें।", "verified": false},
+    "bn": {"text": "খোলা গর্ত থেকে দূরে থাকুন। এটি ঢেকে দিন বা ঘিরে দিন।", "verified": false},
+    "ne": {"text": "खुला खाल्डोबाट टाढा बस्नुहोस्। यसलाई छोप्नुहोस् वा घेर्नुहोस्।", "verified": false},
+    "ur": {"text": "کھلے گڑھے سے دور رہیں۔ اسے ڈھانپیں یا گھیر دیں۔", "verified": false},
+    "ml": {"text": "തുറന്ന കുഴിയിൽ നിന്ന് മാറി നിൽക്കുക. അത് മൂടുകയോ വേലി കെട്ടുകയോ ചെയ്യുക.", "verified": false}
   }
 }
