@@ -87,3 +87,32 @@ def test_alerts_for_gives_one_alert_per_hazard_id_in_order():
         Hazard.of("no_helmet", "c", subject="person:1"),
     ]
     assert [a.hazard_id for a in alerts_for(hazards, "ml")] == ["no_helmet", "trip_cord"]
+
+
+# --- explicit table= (app tests pass a parse_alerts table instead of the shipped file) ---
+TABLE = parse_alerts(
+    {"no_helmet": {**ENGLISH_ONLY, "ar": {"text": "ارتدِ الخوذة", "verified": False}}}
+)
+
+
+def test_table_translation_is_used_and_unverified():
+    alert = alert_for("no_helmet", "ar", TABLE)
+    assert alert.language == "ar"
+    assert alert.verified is False
+
+
+def test_table_missing_language_falls_back_to_english():
+    assert alert_for("no_helmet", "hi", TABLE).language == "en"
+
+
+def test_table_missing_hazard_is_flagged_not_raised():
+    assert alert_for("trip_cord", "ar", TABLE).missing is True
+
+
+def test_alerts_for_passes_table_through():
+    hazards = [Hazard.of("no_helmet", "a"), Hazard.of("trip_cord", "b")]
+    found = alerts_for(hazards, "ar", TABLE)
+    assert [(a.hazard_id, a.language, a.missing) for a in found] == [
+        ("no_helmet", "ar", False),
+        ("trip_cord", "en", True),
+    ]

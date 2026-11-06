@@ -109,20 +109,43 @@ def _phrase(hazard_id: str, language: str, raw: object) -> Alert | None:
     return Alert(hazard_id, language, text, verified) if text else None
 
 
-def alert_for(hazard_id: str, language: str = DEFAULT_LANGUAGE) -> Alert:
-    """The phrase in ``language``, else English, else a flagged generic line."""
+def _from_raw(hazard_id: str, language: str) -> Alert | None:
     phrases = _load().get(hazard_id)
-    if isinstance(phrases, dict):
-        for code in (language, DEFAULT_LANGUAGE):
-            found = _phrase(hazard_id, code, phrases.get(code))
-            if found is not None:
-                return found
+    if not isinstance(phrases, dict):
+        return None
+    for code in (language, DEFAULT_LANGUAGE):
+        found = _phrase(hazard_id, code, phrases.get(code))
+        if found is not None:
+            return found
+    return None
+
+
+def _from_table(hazard_id: str, language: str, table: AlertTable) -> Alert | None:
+    phrases = table.get(hazard_id)
+    if phrases is None:
+        return None
+    return phrases.get(language) or phrases.get(DEFAULT_LANGUAGE)
+
+
+def alert_for(
+    hazard_id: str, language: str = DEFAULT_LANGUAGE, table: AlertTable | None = None
+) -> Alert:
+    """The phrase in ``language``, else English, else a flagged generic line.
+
+    ``table`` (from ``parse_alerts``) overrides the shipped file, e.g. in tests."""
+    found = (
+        _from_raw(hazard_id, language) if table is None else _from_table(hazard_id, language, table)
+    )
+    if found is not None:
+        return found
     log.warning("no alert phrase for hazard %r; using a generic one", hazard_id)
     generic = f"{hazard_id.replace('_', ' ').capitalize()}: no alert text yet."
     return Alert(hazard_id, DEFAULT_LANGUAGE, generic, verified=False, missing=True)
 
 
-def alerts_for(hazards: Iterable[Hazard], language: str = DEFAULT_LANGUAGE) -> list[Alert]:
+def alerts_for(
+    hazards: Iterable[Hazard], language: str = DEFAULT_LANGUAGE, table: AlertTable | None = None
+) -> list[Alert]:
     """One alert per distinct hazard id, in the order the hazards were found."""
     ids = list(dict.fromkeys(h.id for h in hazards))
-    return [alert_for(hid, language) for hid in ids]
+    return [alert_for(hid, language, table) for hid in ids]
