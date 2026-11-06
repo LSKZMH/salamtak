@@ -139,6 +139,8 @@ class OpenVocabDetector:
         self._lock = threading.Lock()
         self._activate("site")
         self.name = f"YOLOE-26 open-vocab ({os.path.basename(weights)})"
+        # Site labels this finder can produce (pipeline's "not checked" note is Site-only).
+        self.labels = frozenset(SITE_PROMPTS.values())
 
     def _activate(self, key: str) -> None:
         if key == self._active:

@@ -172,5 +172,10 @@ def test_detector_runs_on_cpu_with_its_threshold(image):
     assert fake.predict_kwargs["imgsz"] == 480
 
 
+def test_detector_declares_the_site_labels_it_can_produce():
+    # pipeline.unchecked_hazards reads this to say which hazards no model can see
+    assert OpenVocabDetector(model=FakeYOLOE()).labels == frozenset(SITE_PROMPTS.values())
+
+
 def test_default_weights_are_the_smallest_yoloe26():
     assert openvocab.DEFAULT_WEIGHTS == "yoloe-26n-seg.pt"
