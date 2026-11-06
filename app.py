@@ -10,8 +10,10 @@ import html
 import logging
 import os
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import gradio as gr
 from PIL import Image
@@ -33,15 +35,41 @@ LANGUAGES: dict[str, str] = {
 }
 RTL_LANGUAGES = frozenset({"ar", "ur"})
 
-# ---- The one line to change when the trained model is on the Hub: ----
-PRIMARY = detect.MockDetector()  # -> detect.YoloDetector()
+log = logging.getLogger("safesite")
+logging.basicConfig(level=logging.INFO)
+MAX_ECHO_KIND = 20  # chars of an unknown SAFESITE_DETECTOR value shown in the banner
+
+
+def build_primary(kind: str, factory: Callable[[], Any] = detect.YoloDetector) -> tuple[Any, str | None]:
+    """The trained-detector slot: "mock" (default) or "yolo" (Chat 2's YOLO26 from the Hub,
+    configured by SAFESITE_MODEL_REPO / SAFESITE_WEIGHTS_FILE / SAFESITE_MODEL_REVISION).
+
+    Never crashes the Space: an unknown value or a model that fails to load falls back to the
+    mock and returns a warning the UI shows as a banner. Full error details go only to the logs.
+    """
+    choice = (kind or "mock").strip().lower()
+    if choice == "mock":
+        return detect.MockDetector(), None
+    if choice != "yolo":
+        log.error("unknown SAFESITE_DETECTOR value %r; using the mock", kind)
+        shown = html.escape(choice[:MAX_ECHO_KIND])
+        return detect.MockDetector(), f"Unknown SAFESITE_DETECTOR value '{shown}' (use mock or yolo); showing the mock detector."
+    try:
+        return factory(), None
+    except Exception as exc:  # any load failure: keep the demo up, say so loudly
+        log.exception("trained detector failed to load; using the mock")
+        return detect.MockDetector(), (
+            f"Trained model failed to load ({type(exc).__name__}); showing the mock detector. See the Space logs."
+        )
+
+
+# Trained detector: set the Space variable SAFESITE_DETECTOR=yolo once Chat 2's best.pt is on the Hub
+# (and pin SAFESITE_MODEL_REVISION); no code change needed.
+PRIMARY, LOAD_WARNING = build_primary(os.environ.get("SAFESITE_DETECTOR", "mock"))
 # YOLOE-26 open-vocab finder (harness, scaffold, cords, ...; all of Home mode). Set the Space
 # variable SAFESITE_OPEN_VOCAB=0 to switch it off (tests do, so they never load the model).
 OPEN_VOCAB = os.environ.get("SAFESITE_OPEN_VOCAB", "1") != "0"
 DETECTOR = detect.CombinedDetector(PRIMARY, openvocab.OpenVocabDetector()) if OPEN_VOCAB else PRIMARY
-
-log = logging.getLogger("safesite")
-logging.basicConfig(level=logging.INFO)
 
 DOHA_TZ = timezone(timedelta(hours=3))  # Qatar: UTC+3, no DST
 EXIF_DATETIME_ORIGINAL = 0x9003
@@ -198,6 +226,8 @@ def build_ui() -> gr.Blocks:
             "Includes Qatar's midday summer work ban and the WBGT stop-work rule. No LLM in the loop.  \n"
             f"*{DISCLAIMER}*"
         )
+        if LOAD_WARNING:
+            gr.Markdown(f"> ⚠️ **{LOAD_WARNING}**")
         if PRIMARY.is_mock and OPEN_VOCAB:
             gr.Markdown("> **Demo mode:** people, helmets, vests and vehicles are fixed fake boxes from a mock "
                         "detector. Harness, scaffold, ladder, shade, water, cord and all Home-mode finds are real.")

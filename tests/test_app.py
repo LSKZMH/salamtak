@@ -159,6 +159,42 @@ def test_unassessed_photo_never_shows_a_score():
 
 
 # ---------- UI + annotation ----------
+# ---------- detector switch (SAFESITE_DETECTOR) ----------
+def _must_not_build():
+    raise AssertionError("the trained model must not be loaded in mock mode")
+
+
+@pytest.mark.parametrize("kind", ["mock", "", "  MOCK "])
+def test_detector_switch_defaults_to_mock(kind):
+    primary, warning = app.build_primary(kind, factory=_must_not_build)
+    assert primary.is_mock and warning is None
+
+
+def test_detector_switch_yolo_builds_the_trained_model():
+    trained = object()
+    primary, warning = app.build_primary("yolo", factory=lambda: trained)
+    assert primary is trained and warning is None
+
+
+def test_trained_model_failure_falls_back_to_mock_with_visible_warning():
+    def broken():
+        raise RuntimeError("401 Unauthorized: hf_secret_should_not_leak")
+
+    primary, warning = app.build_primary("yolo", factory=broken)
+    assert primary.is_mock
+    assert "failed to load" in warning and "RuntimeError" in warning
+    assert "hf_secret_should_not_leak" not in warning  # details go to the logs, not the page
+
+
+def test_unknown_detector_value_falls_back_with_warning():
+    primary, warning = app.build_primary("yolov8", factory=_must_not_build)
+    assert primary.is_mock and "yolov8" in warning
+
+
+def test_default_app_boot_uses_mock_without_warning():
+    assert app.PRIMARY.is_mock and app.LOAD_WARNING is None
+
+
 def test_ui_builds_and_examples_exist():
     assert isinstance(app.build_ui(), gr.Blocks)
     assert all(Path(row[0]).is_file() for row in app.EXAMPLES)
