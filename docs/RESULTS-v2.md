@@ -92,4 +92,4 @@ _To fill in from `metrics.json`._ v1 on its own val split: mAP50 0.549 (helmet 0
 
 ## Credits
 
-From `COSTS.md`: **$2.20** so far (Jobs $1.63 + Space ≈ $0.57). _Final total at the end of the night._
+From `COSTS.md`: **$2.22** so far (Jobs $1.65 + Space ≈ $0.57). _Final total at the end of the night._
