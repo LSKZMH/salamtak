@@ -137,6 +137,7 @@ class FakeYOLOE:
 
     def predict(self, image, **kwargs):
         self.predict_kwargs = kwargs
+        self.predict_calls = getattr(self, "predict_calls", 0) + 1
         boxes = SimpleNamespace(
             xyxyn=FakeTensor([[0.1, 0.7, 0.9, 0.95]]), conf=FakeTensor([0.6]), cls=FakeTensor([0.0])
         )
@@ -183,6 +184,13 @@ def test_detector_runs_on_cpu_with_its_threshold(image):
     assert fake.predict_kwargs["device"] == "cpu"
     assert fake.predict_kwargs["conf"] == 0.2
     assert fake.predict_kwargs["imgsz"] == 480
+
+
+def test_detector_warms_up_once_at_start_so_the_first_photo_is_not_slow():
+    fake = FakeYOLOE()
+    OpenVocabDetector(model=fake)
+    assert fake.predict_calls == 1
+    assert fake.predict_kwargs["device"] == "cpu"
 
 
 def test_detector_declares_the_site_labels_it_can_produce():

@@ -145,6 +145,9 @@ class OpenVocabDetector:
         self.name = f"YOLOE-26 open-vocab ({os.path.basename(weights)})"
         # Site labels this finder can produce (pipeline's "not checked" note is Site-only).
         self.labels = frozenset(SITE_PROMPTS.values())
+        # Warm-up at boot: the first real predict is ~5 s slower than the rest on CPU.
+        self._model.predict(Image.new("RGB", (imgsz, imgsz)), conf=conf, imgsz=imgsz,
+                            device="cpu", verbose=False)
 
     def _activate(self, key: str) -> None:
         if key == self._active:

@@ -18,7 +18,8 @@ is then computed from those scores, so the sweep costs one pass.
 Metrics are image-level, per phrasing (or union of two phrasings for one label):
   hit rate = share of images containing the label with >= 1 detection at the threshold
   FP rate  = share of images NOT containing it (neg + other labels' pos) with >= 1 detection
-Ship rule: hit rate >= 0.6 and FP rate <= 0.10 at one threshold.
+Ship rule: at one threshold above YOLOE's own floor (openvocab.CONF_THRESHOLD), hit rate >= 0.6,
+FP rate <= 0.10 and FP rate on plain site photos (neg/neg_site_*, at least one needed) <= 0.10.
 """
 from __future__ import annotations
 
@@ -94,11 +95,13 @@ class OperatingPoint:
     n_other: int
     n_neg: int
     fp_rate_site: float = 0.0  # plain construction-site negatives only
+    n_site: int = 0  # how many of those there are; 0 = the site safeguard cannot be checked
 
     @property
     def ships(self) -> bool:
         return (self.n_pos > 0 and self.hit_rate >= MIN_HIT_RATE and self.fp_rate <= MAX_FP_RATE
-                and self.fp_rate_site <= MAX_FP_RATE and self.threshold > YOLOE_FLOOR)
+                and self.n_site > 0 and self.fp_rate_site <= MAX_FP_RATE
+                and self.threshold > YOLOE_FLOOR)
 
 
 # ---------- bench set ----------
@@ -181,7 +184,7 @@ def operating_point(label: str, phrasings: Sequence[str], threshold: float, scor
         return sum(fires(scores[k], phrasings, threshold) for k in keys) / len(keys) if keys else 0.0
 
     return OperatingPoint(label, tuple(phrasings), threshold, rate(pos), rate(others), rate(negs),
-                          len(pos), len(others), len(negs), rate(site))
+                          len(pos), len(others), len(negs), rate(site), len(site))
 
 
 def candidates(phrasings: Sequence[str]) -> list[tuple[str, ...]]:
@@ -284,7 +287,8 @@ def report(scores: Scores, truth: Mapping[str, frozenset[str]], weights: str, im
     return "\n".join(lines + [""])
 
 
-PRODUCTION_CUTOFFS: Mapping[str, float] = {"utility_pole": 0.20, "rebar": 0.20}  # what we ship
+# What we recommend for rules.OPEN_VOCAB_CUTOFFS (from the sweep above, prompts as shipped).
+RECOMMENDED_CUTOFFS: Mapping[str, float] = {"utility_pole": 0.20, "rebar": 0.20}
 
 
 def production_scores(bench: Path, images: Sequence[str], weights: str) -> dict[str, dict[str, float]]:
@@ -303,18 +307,30 @@ def production_scores(bench: Path, images: Sequence[str], weights: str) -> dict[
     return out
 
 
+def _rates(label: str, cut: float, scores: Scores, truth: Mapping[str, frozenset[str]]) -> str:
+    p = operating_point(label, (label,), cut, scores, truth)
+    return f"{cut:.2f} | {p.hit_rate:.2f} | {p.fp_rate:.2f} | {p.fp_rate_site:.2f}"
+
+
 def production_section(scores: Scores, truth: Mapping[str, frozenset[str]]) -> list[str]:
-    """Hit / FP per shipped label (and existing ones) with the shipped prompt set and cut-offs."""
+    """Shipped prompt set as the app runs it: rates at the cut-off rules.py applies today
+    (deployed) and at the recommended one, so the doc can never describe a different app."""
+    missing = set(truth) - set(scores)
+    if missing:
+        raise ValueError(f"{len(missing)} bench images have no production score; re-run with --production")
     lines = ["## Production check (shipped Site prompt set, app's `OpenVocabDetector`)", "",
-             "Scores change a little when the prompt set changes, so the shipped set is re-run as "
-             "the app runs it.", "",
-             "| label | cut-off | hit rate | FP rate | FP neg | FP site | ships |", "|---|---|---|---|---|---|---|"]
-    labels = {**PRODUCTION_CUTOFFS, **{lab: deployed_cutoff(lab) for lab in EXISTING_PHRASINGS}}
-    for label, cut in labels.items():
-        p = operating_point(label, (label,), cut, scores, truth)
-        verdict = "yes" if p.ships else ("n/a (no positives)" if p.n_pos == 0 else "no")
-        lines.append(f"| `{label}` | {cut:.2f} | {p.hit_rate:.2f} | {p.fp_rate:.2f} | "
-                     f"{p.fp_rate_neg:.2f} | {p.fp_rate_site:.2f} | {verdict} |")
+             "Scores move a little when the prompt set changes, so the shipped set is re-run as the "
+             "app runs it. *Deployed* = the cut-off `rules.py` applies today.", "",
+             "| label | deployed cut-off | hit | FP | FP site | recommended cut-off | hit | FP | FP site |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for label in [*RECOMMENDED_CUTOFFS, *EXISTING_PHRASINGS]:
+        rec = RECOMMENDED_CUTOFFS.get(label, deployed_cutoff(label))
+        lines.append(f"| `{label}` | {_rates(label, deployed_cutoff(label), scores, truth)} | "
+                     f"{_rates(label, rec, scores, truth)} |")
+    pending = [lab for lab, cut in RECOMMENDED_CUTOFFS.items() if deployed_cutoff(lab) != cut]
+    if pending:
+        lines += ["", f"Recommended cut-offs for {', '.join(f'`{x}`' for x in pending)} are not yet in "
+                  "`rules.OPEN_VOCAB_CUTOFFS` (Chat 8 copies them)."]
     return lines + [""]
 
 

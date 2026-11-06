@@ -171,12 +171,14 @@ Caveat: small sets (9–29 positives per label), and phrasings were picked on th
 | `rebar` | 'exposed rebar', 'steel reinforcement bars sticking up' | 0.20 | 0.62 | 0.03 |
 ## Production check (shipped Site prompt set, app's `OpenVocabDetector`)
 
-Scores change a little when the prompt set changes, so the shipped set is re-run as the app runs it.
+Scores move a little when the prompt set changes, so the shipped set is re-run as the app runs it. *Deployed* = the cut-off `rules.py` applies today.
 
-| label | cut-off | hit rate | FP rate | FP neg | FP site | ships |
-|---|---|---|---|---|---|---|
-| `utility_pole` | 0.20 | 0.75 | 0.04 | 0.04 | 0.04 | yes |
-| `rebar` | 0.20 | 0.77 | 0.04 | 0.03 | 0.00 | yes |
-| `harness` | 0.25 | 0.00 | 0.00 | 0.00 | 0.00 | n/a (no positives) |
-| `scaffold` | 0.25 | 0.75 | 0.03 | 0.00 | 0.00 | yes |
-| `ladder` | 0.25 | 0.00 | 0.00 | 0.00 | 0.00 | n/a (no positives) |
+| label | deployed cut-off | hit | FP | FP site | recommended cut-off | hit | FP | FP site |
+|---|---|---|---|---|---|---|---|---|
+| `utility_pole` | 0.25 | 0.75 | 0.02 | 0.00 | 0.20 | 0.75 | 0.04 | 0.04 |
+| `rebar` | 0.25 | 0.69 | 0.02 | 0.00 | 0.20 | 0.77 | 0.04 | 0.00 |
+| `harness` | 0.25 | 0.00 | 0.00 | 0.00 | 0.25 | 0.00 | 0.00 | 0.00 |
+| `scaffold` | 0.25 | 0.75 | 0.03 | 0.00 | 0.25 | 0.75 | 0.03 | 0.00 |
+| `ladder` | 0.25 | 0.00 | 0.00 | 0.00 | 0.25 | 0.00 | 0.00 | 0.00 |
+
+Recommended cut-offs for `utility_pole`, `rebar` are not yet in `rules.OPEN_VOCAB_CUTOFFS` (Chat 8 copies them).

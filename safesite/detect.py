@@ -61,6 +61,7 @@ class MockDetector:
     name = "MOCK detector (fixed fake detections)"
     is_mock = True
     supports_home = True
+    labels = frozenset(d.label for d in MOCK_SITE)  # Site labels it can produce
 
     def __call__(self, image: Image.Image, mode: Mode = "site") -> list[Detection]:
         return list(MOCK_HOME if mode == "home" else MOCK_SITE)

@@ -62,17 +62,19 @@ def test_candidates_are_singles_then_pairs() -> None:
 TRUTH = {
     "p1": frozenset({"fire"}), "p2": frozenset({"fire"}), "p3": frozenset({"fire"}),
     "o1": frozenset({"welding"}), "n1": frozenset(), "n2": frozenset(),
+    "neg/neg_site_0.jpg": frozenset(),  # a plain site photo, so the site safeguard is real
 }
 
 
 def test_operating_point_counts_hits_and_false_positives_at_threshold() -> None:
     scores = {"p1": {"fire": 0.5}, "p2": {"fire": 0.3}, "p3": {"fire": 0.1},
-              "o1": {"fire": 0.4}, "n1": {"fire": 0.0}, "n2": {"fire": 0.2}}
+              "o1": {"fire": 0.4}, "n1": {"fire": 0.0}, "n2": {"fire": 0.2},
+              "neg/neg_site_0.jpg": {"fire": 0.0}}
     point = bench.operating_point("fire", ("fire",), 0.25, scores, TRUTH)
     assert point.hit_rate == pytest.approx(2 / 3)
-    assert point.fp_rate == pytest.approx(1 / 3)  # o1 fires; n1, n2 do not
+    assert point.fp_rate == pytest.approx(1 / 4)  # o1 fires; n1, n2 and the site photo do not
     assert point.fp_rate_neg == 0.0
-    assert (point.n_pos, point.n_other, point.n_neg) == (3, 3, 2)
+    assert (point.n_pos, point.n_other, point.n_neg, point.n_site) == (3, 4, 3, 1)
     assert not point.ships  # FP rate too high
 
 
@@ -94,7 +96,7 @@ def test_sweep_picks_safest_shipping_threshold() -> None:
 
 
 def _point(hit: float, fp: float) -> object:
-    return bench.OperatingPoint("welding", ("a",), 0.3, hit, fp, fp, 10, 100, 50)
+    return bench.OperatingPoint("welding", ("a",), 0.3, hit, fp, fp, 10, 100, 50, 0.0, 20)
 
 
 def test_shipping_points_rank_by_hit_rate_minus_fp_rate() -> None:
@@ -107,17 +109,17 @@ def test_shipping_points_rank_by_hit_rate_minus_fp_rate() -> None:
 
 
 def test_threshold_at_the_yoloe_floor_never_ships() -> None:
-    at_floor = bench.OperatingPoint("fire", ("a",), bench.YOLOE_FLOOR, 0.9, 0.0, 0.0, 10, 100, 50)
+    at_floor = bench.OperatingPoint("fire", ("a",), bench.YOLOE_FLOOR, 0.9, 0.0, 0.0, 10, 100, 50, 0.0, 20)
     assert not at_floor.ships
 
 
 def test_false_alarms_on_plain_site_photos_block_shipping() -> None:
     truth = {**TRUTH, "neg/neg_site_1.jpg": frozenset(), "neg/neg_site_2.jpg": frozenset()}
     scores = {k: {"trench": 0.5 if k.startswith("p") else 0.0} for k in truth}
-    scores["neg/neg_site_1.jpg"]["trench"] = 0.5  # 1 of 2 site photos fires; 1 of 5 others overall
+    scores["neg/neg_site_1.jpg"]["trench"] = 0.5  # one plain site photo fires
     point = bench.operating_point("trench", ("trench",), 0.3,
                                   scores, {**truth, "p1": {"trench"}, "p2": {"trench"}, "p3": {"trench"}})
-    assert point.fp_rate_site == 0.5 and not point.ships
+    assert point.fp_rate_site == pytest.approx(1 / 3) and not point.ships  # 1 of 3 site photos
 
 
 def test_held_back_label_is_reported_but_not_recommended() -> None:
@@ -157,19 +159,46 @@ def test_report_marks_benched_label_that_fails_as_not_shipped() -> None:
     assert "| `welding` |" not in text
 
 
-def test_production_section_reports_shipped_labels_at_their_cutoffs() -> None:
-    truth = {**TRUTH, "r1": frozenset({"rebar"}), "u1": frozenset({"utility_pole"})}
-    scores = {k: {} for k in truth}
-    scores["r1"]["rebar"] = 0.3
-    scores["u1"]["utility_pole"] = 0.1  # below its 0.20 cut-off -> a miss
-    text = "\n".join(bench.production_section(scores, truth))
-    assert "| `rebar` | 0.20 | 1.00 | 0.00 | 0.00 | 0.00 | yes |" in text
-    assert "| `utility_pole` | 0.20 | 0.00 |" in text
+SITE_TRUTH = {**TRUTH, "neg/neg_site_1.jpg": frozenset(), "r1": frozenset({"rebar"}),
+              "u1": frozenset({"utility_pole"})}
+
+
+def test_production_section_shows_deployed_and_recommended_cutoffs(monkeypatch) -> None:
+    from safesite import rules
+
+    monkeypatch.setattr(rules, "OPEN_VOCAB_CUTOFFS", {})  # rules.py not updated yet -> default 0.25
+    scores = {k: {} for k in SITE_TRUTH}
+    scores["r1"]["rebar"] = 0.22  # a hit at the recommended 0.20, a miss at the deployed 0.25
+    text = "\n".join(bench.production_section(scores, SITE_TRUTH))
+    assert "| `rebar` | 0.25 | 0.00 | 0.00 | 0.00 | 0.20 | 1.00 | 0.00 |" in text
     assert "| `harness` | 0.25 |" in text
 
 
-def test_shipped_cutoffs_match_the_shipped_site_prompts() -> None:
-    assert set(bench.PRODUCTION_CUTOFFS) <= set(bench.openvocab.SITE_PROMPTS.values())
+def test_production_section_flags_missing_cutoffs_in_rules(monkeypatch) -> None:
+    from safesite import rules
+
+    monkeypatch.setattr(rules, "OPEN_VOCAB_CUTOFFS", {})
+    text = "\n".join(bench.production_section({k: {} for k in SITE_TRUTH}, SITE_TRUTH))
+    assert "not yet in `rules.OPEN_VOCAB_CUTOFFS`" in text
+    monkeypatch.setattr(rules, "OPEN_VOCAB_CUTOFFS", dict(bench.RECOMMENDED_CUTOFFS))
+    text = "\n".join(bench.production_section({k: {} for k in SITE_TRUTH}, SITE_TRUTH))
+    assert "not yet in" not in text
+
+
+def test_production_section_refuses_stale_scores() -> None:
+    with pytest.raises(ValueError, match="re-run with --production"):
+        bench.production_section({"p1": {}}, SITE_TRUTH)
+
+
+def test_recommended_cutoffs_match_the_shipped_site_prompts() -> None:
+    assert set(bench.RECOMMENDED_CUTOFFS) <= set(bench.openvocab.SITE_PROMPTS.values())
+
+
+def test_no_site_negatives_means_nothing_ships() -> None:
+    # the site-photo safeguard must not pass vacuously
+    truth = {k: v for k, v in TRUTH.items() if not k.startswith("neg/neg_site")}
+    scores = {k: {"fire": 0.5 if k.startswith("p") else 0.0} for k in truth}
+    assert not bench.operating_point("fire", ("fire",), 0.3, scores, truth).ships
 
 
 def test_all_prompts_has_no_duplicates_and_includes_existing() -> None:

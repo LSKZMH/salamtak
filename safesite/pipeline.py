@@ -23,14 +23,15 @@ EQUIPMENT_LABELS = frozenset({"machinery", "vehicle", "crane_hook", "utility_pol
 # judge is listed as "not checked" instead of letting the photo look safe. Order = display order.
 HAZARD_INPUTS: dict[str, tuple[frozenset[str], ...]] = {
     "under_suspended_load": (frozenset({"crane_hook"}),),
-    "power_line_contact": (frozenset({"utility_pole"}), frozenset({"power_line"})),
+    "power_line_contact": (frozenset({"utility_pole", "machinery"}), frozenset({"power_line", "machinery"})),
     "hot_work_fire": (frozenset({"fire"}), frozenset({"welding", "gas_cylinder"})),
     # "no extinguisher in the photo" means nothing unless extinguishers can be detected
     "no_fire_extinguisher": (frozenset({"fire", "fire_extinguisher"}),
                              frozenset({"welding", "fire_extinguisher"})),
     "exposed_rebar": (frozenset({"rebar"}),),
     "fall_into_opening": (frozenset({"floor_opening"}), frozenset({"trench"})),
-    "fall_no_harness": (frozenset({"scaffold"}), frozenset({"ladder"})),
+    # "no harness seen" likewise means nothing unless harnesses can be detected
+    "fall_no_harness": (frozenset({"scaffold", "harness"}), frozenset({"ladder", "harness"})),
 }
 
 

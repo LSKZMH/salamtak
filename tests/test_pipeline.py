@@ -65,6 +65,40 @@ PERSON = [Detection("person", 0.9, (0.1, 0.1, 0.3, 0.9)), Detection("helmet", 0.
 def test_unchecked_hazards_lists_hazards_whose_inputs_no_model_produces():
     assert unchecked_hazards({"person", "crane_hook", "fire"}) == (
         "power_line_contact", "no_fire_extinguisher", "exposed_rebar", "fall_into_opening", "fall_no_harness")
+
+
+def test_power_line_contact_needs_machinery_and_fall_rule_needs_a_harness_detector():
+    assert "power_line_contact" in unchecked_hazards({"utility_pole"})  # nothing to touch the pole
+    assert "power_line_contact" not in unchecked_hazards({"utility_pole", "machinery"})
+    assert "fall_no_harness" in unchecked_hazards({"scaffold"})  # "no harness seen" means nothing
+    assert "fall_no_harness" not in unchecked_hazards({"scaffold", "harness"})
+
+
+# One layout where every object sits on/next to the worker, so any rule whose labels are present fires.
+_LAYOUT = {
+    "person": (0.40, 0.30, 0.60, 0.90), "machinery": (0.55, 0.40, 0.95, 0.90),
+    "crane_hook": (0.45, 0.10, 0.55, 0.28), "utility_pole": (0.62, 0.00, 0.70, 0.90),
+    "power_line": (0.00, 0.30, 1.00, 0.45), "fire": (0.30, 0.50, 0.50, 0.80),
+    "welding": (0.35, 0.50, 0.55, 0.80), "gas_cylinder": (0.50, 0.55, 0.58, 0.85),
+    "rebar": (0.20, 0.70, 0.80, 0.95), "trench": (0.30, 0.85, 0.80, 1.00),
+    "floor_opening": (0.30, 0.85, 0.80, 1.00), "scaffold": (0.30, 0.10, 0.70, 0.95),
+    "ladder": (0.35, 0.30, 0.65, 0.95),
+}
+_ABSENCE_LABELS = {"fire_extinguisher", "harness"}  # the rule fires when these are NOT seen
+
+
+@pytest.mark.parametrize(
+    ("hazard", "option"),
+    [(h, o) for h, options in HAZARD_INPUTS.items() for o in options],
+    ids=lambda v: v if isinstance(v, str) else "+".join(sorted(v)),
+)
+def test_hazard_inputs_match_what_rules_py_needs_to_fire(hazard, option):
+    from safesite import rules
+
+    trained = {"person", "machinery"}
+    present = {"person"} | (option - _ABSENCE_LABELS)
+    dets = [Detection(lab, 0.95, _LAYOUT[lab], "detector" if lab in trained else "yoloe") for lab in present]
+    assert hazard in {h.id for h in rules.evaluate(dets, WINTER)}
     every_input = set().union(*(s for options in HAZARD_INPUTS.values() for s in options))
     assert unchecked_hazards(every_input) == ()
 

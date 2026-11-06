@@ -110,6 +110,11 @@ def test_combined_detector_has_no_labels_when_a_part_does_not_declare_them():
     assert getattr(detect.CombinedDetector(primary, _Fake("harness", "F")), "labels", None) is None
 
 
+def test_mock_detector_declares_its_site_labels():
+    # so the mock (default, and fallback when YOLO fails) still shows the "not checked" note
+    assert detect.MockDetector().labels == frozenset(d.label for d in detect.MOCK_SITE)
+
+
 def test_mock_boxes_are_normalized():
     for mode in ("site", "home"):
         for d in detect.MockDetector()(Image.new("RGB", (64, 64)), mode):
