@@ -418,3 +418,39 @@ def test_main_only_hazards_end_to_end(fake_repo: Path, capsys):
     assert "`no_helmet`" not in report  # mock's no_helmet on the clean photo is ignored
     data = json.loads(out_json.read_text())
     assert data["only_hazards"] == ["midday_ban"] and data["summary"]["false_alarms"] == 0
+
+
+# ---------- --space: score the live Space ----------
+SPACE_HTML = ("<div role='status'><div class='ss-score ss-bad'>50/100 · Needs attention</div>"
+              "<p><strong>2 High · 0 Medium</strong> hazards<br>Photo time: 2026-11-05 08:00 (override)<br>"
+              "Detector: YOLO26 (plitip/team-qh-091-safesite@abc1234) + YOLOE-26 &amp; co · 1.37 s</p></div>")
+
+
+def test_parse_space_status_reads_detector_and_server_seconds():
+    assert ev.parse_space_status(SPACE_HTML) == (
+        "YOLO26 (plitip/team-qh-091-safesite@abc1234) + YOLOE-26 & co", 1.37)
+    with pytest.raises(ValueError, match="Space"):
+        ev.parse_space_status("<div>error</div>")
+
+
+@pytest.mark.parametrize("table", [
+    {"headers": ["Hazard", "Severity", "Reason"],
+     "data": [["no_helmet", "High", "a"], ["midday_ban", "High", "b"]]},
+    [["no_helmet", "High", "a"], ["midday_ban", "High", "b"]],
+])
+def test_space_hazard_ids_from_dataframe_payload(table):
+    assert ev.space_hazard_ids(table) == {"no_helmet", "midday_ban"}
+
+
+def test_space_hazard_ids_empty_table():
+    assert ev.space_hazard_ids({"headers": ["Hazard"], "data": [[None, None, None]]}) == frozenset()
+    assert ev.space_hazard_ids(None) == frozenset()
+
+
+def test_space_inputs_pin_the_time_so_the_space_never_uses_now():
+    photo = ev.LabelledPhoto("a.jpg", frozenset(), wbgt_c=33.0, outdoor=False, mode="home")
+    args = ev.space_inputs(photo, exif_taken=None)
+    assert args == {"time_override": "2026-01-15 08:00", "wbgt": 33.0, "outdoor": False,
+                    "lang": "en", "mode": "Home"}
+    dated = ev.LabelledPhoto("b.jpg", frozenset(), taken_at=datetime(2026, 7, 1, 12, 0))
+    assert ev.space_inputs(dated, datetime(2025, 1, 1))["time_override"] == "2026-07-01 12:00"

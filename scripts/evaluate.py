@@ -21,6 +21,7 @@ Usage (from the repo root):
   python scripts/evaluate.py --detector combined           # trained YOLO26 + YOLOE (what the Space runs)
   python scripts/evaluate.py --detector package.module:Name # any detector class
   python scripts/evaluate.py --threads 8 --json eval.json   # 8 threads = cpu-upgrade Space
+  python scripts/evaluate.py --space plitip/team-qh-091-safesite-app   # the live Space, timed on its CPU
   python scripts/evaluate.py --labels other/labels.csv --only-hazards no_helmet,machinery_zone
       score only these ids; other predicted hazards are ignored, not counted as false alarms
       (for outside benchmarks that don't label e.g. trip_cord or the heat rules)
@@ -36,6 +37,7 @@ from __future__ import annotations
 import argparse
 import csv
 import dataclasses
+import html
 import importlib
 import json
 import os
@@ -563,6 +565,68 @@ def run_all(pipeline: Pipeline, photos: Sequence[LabelledPhoto], image_dir: Path
     return outcome
 
 
+# ---------- live Space (--space) ----------
+SPACE_API = "/analyze"
+SPACE_TIME_FORMAT = "%Y-%m-%d %H:%M"
+SPACE_LANG = "en"
+_SPACE_STATUS = re.compile(r"Detector:\s*(.*?)\s*·\s*([0-9]+(?:\.[0-9]+)?)\s*s\s*</p>", re.DOTALL)
+
+
+def parse_space_status(score_html: str) -> tuple[str, float]:
+    """(detector name, server-side seconds) from the Space's score HTML (app._score_html)."""
+    match = _SPACE_STATUS.search(score_html or "")
+    if not match:
+        raise ValueError(f"Space score HTML has no 'Detector: ... · N s' line: {score_html[:200]!r}")
+    return html.unescape(match.group(1)), float(match.group(2))
+
+
+def space_hazard_ids(table: Any) -> frozenset[str]:
+    """Hazard ids from the Space's Dataframe output ({headers, data} or a list of rows)."""
+    rows = table.get("data", []) if isinstance(table, dict) else (table or [])
+    return frozenset(str(row[0]) for row in rows if row and row[0])
+
+
+def space_inputs(photo: LabelledPhoto, exif_taken: datetime | None) -> dict[str, Any]:
+    """Always pass a time: with a blank override the Space would use EXIF or *now*."""
+    taken_at = photo.taken_at or exif_taken or NEUTRAL_TIME
+    return {"time_override": taken_at.strftime(SPACE_TIME_FORMAT), "wbgt": photo.wbgt_c,
+            "outdoor": photo.outdoor, "lang": SPACE_LANG, "mode": photo.mode.capitalize()}
+
+
+def run_space(space: str, photos: Sequence[LabelledPhoto], image_dir: Path,
+              warmup: int) -> tuple[Pipeline, RunOutcome]:
+    """Send each photo to the live Space. wall_s/cpu_s = the Space's own processing time
+    (excludes upload and queueing); the client round trip is printed to stderr only."""
+    from gradio_client import Client, handle_file
+
+    client = Client(space, verbose=False)
+    outcome = RunOutcome([], [], [])
+    name = space
+    for photo in photos:
+        path = image_dir / photo.filename
+        try:
+            _, exif_taken = open_photo(path)
+        except (OSError, ValueError) as exc:
+            outcome.skipped.append(f"{photo.filename} ({type(exc).__name__}: {exc})")
+            continue
+        inputs = space_inputs(photo, exif_taken)
+        for _ in range(warmup if not outcome.results else 0):
+            client.predict(handle_file(str(path)), **inputs, api_name=SPACE_API)  # wake + lazy init
+        started = time.perf_counter()
+        score_html, _alerts, _image, table = client.predict(handle_file(str(path)), **inputs,
+                                                            api_name=SPACE_API)
+        round_trip = time.perf_counter() - started
+        name, secs = parse_space_status(score_html)
+        hazards = space_hazard_ids(table)
+        outcome.results.append(PhotoResult(photo.filename, photo.hazards, hazards,
+                                           100, secs, secs, photo.mode))
+        print(f"  {photo.filename}: {sorted(hazards)}, Space {secs:.2f} s, "
+              f"round trip {round_trip:.2f} s", file=sys.stderr)
+    pipeline = Pipeline(None, None, None, object, f"live Space {space}: {name}",
+                        is_mock="mock" in name.lower())
+    return pipeline, outcome
+
+
 # ---------- report ----------
 def _pct(value: float | None) -> str:
     return "n/a" if value is None else f"{100 * value:.0f}%"
@@ -677,6 +741,9 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--detector", default="mock",
                         help="mock | yolo | combined | package.module:Name")
     parser.add_argument("--weights", help="local .pt for --detector yolo (default: download from the Hub)")
+    parser.add_argument("--space", metavar="OWNER/NAME",
+                        help="score the live Space instead of a local detector; seconds per photo "
+                             "are the Space's own processing time (its true CPU)")
     parser.add_argument("--threads", type=int,
                         help="limit CPU threads to the Space's vCPUs (cpu-basic 2, cpu-upgrade 8)")
     parser.add_argument("--warmup", type=int, default=DEFAULT_WARMUP_RUNS,
@@ -719,8 +786,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, LabelError) as exc:
         print(f"error: can't use {labels_path}:\n{exc}", file=sys.stderr)
         return EXIT_BAD_LABELS
-    pipeline = load_pipeline(args.detector, args.weights)
-    raw = run_all(pipeline, photos, args.images or labels_path.parent, args.warmup)
+    image_dir = args.images or labels_path.parent
+    if args.space:  # the live Space decides; rule ids are still read from this checkout
+        pipeline, raw = run_space(args.space, photos, image_dir, args.warmup)
+    else:
+        pipeline = load_pipeline(args.detector, args.weights)
+        raw = run_all(pipeline, photos, image_dir, args.warmup)
     scored = photos if only is None else [
         dataclasses.replace(p, hazards=p.hazards & only) for p in photos]
     outcome = RunOutcome(restrict(raw.results, only), raw.skipped,
