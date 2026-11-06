@@ -42,14 +42,26 @@ Validation split = the source datasets' own `valid` splits only (4,109 images), 
 
 | metric | value |
 |---|---|
-| **mAP50** | **TBD** |
-| mAP50-95 | TBD |
-| precision | TBD |
-| recall | TBD |
+| **mAP50** | **0.549** |
+| mAP50-95 | 0.355 |
+| precision | 0.473 |
+| recall | 0.648 |
 
-Per-class mAP50: TBD (see `metrics.json`).
+Per-class mAP50 (small validation box counts mean noisy scores):
 
-Training: YOLO26s from COCO-pretrained `yolo26s.pt`, imgsz 640, batch 32, ~TBD epochs on 1× NVIDIA L4 via Hugging Face Jobs (TBD min, ≈ $TBD). Script: `scripts/train.py` in the project repo.
+| class | mAP50 | val boxes |
+|---|---|---|
+| helmet | **0.939** | 9,262 |
+| no_helmet | **0.928** | 2,255 |
+| machinery | 0.876 | 14 |
+| vehicle | 0.663 | 8 |
+| vest | 0.186 | 135 |
+| person | 0.171 | 237 |
+| no_vest | 0.079 | 75 |
+
+The headline use case — helmet vs. no helmet — is strong (≈ 0.93). Machinery and vehicle look good but rest on only 14 and 8 validation boxes, so treat those numbers as rough. Person and vest/no_vest are weak (see Limitations).
+
+Training: YOLO26s from COCO-pretrained `yolo26s.pt`, imgsz 640, batch 32, **36 epochs** (1.75 h time budget) on 1× NVIDIA L4 via Hugging Face Jobs — 107 min billed, ≈ $1.43. Script: `scripts/train.py` in the project repo; full curves in `results.csv`.
 
 ## Training data and licenses
 
@@ -72,10 +84,11 @@ Dropped source classes: barricade, dumpster, gloves, mask, no-mask, safety net, 
 
 ## Limitations
 
-- **Machinery and vehicle are very sparse** in training data (~190 and ~100 boxes) — expect weak detection. The SafeSite app uses open-vocabulary YOLOE for extra objects.
+- **`person` is weak (mAP50 0.17).** The largest source, hard-hat-detection, shows many people but labels only their heads, so most people in training are unlabelled and the model learns to ignore them. Rely on helmet / no_helmet boxes (head-level) for PPE checks; a stock COCO person detector or YOLOE is better for counting people.
+- **Vest / no_vest are weak (0.19 / 0.08)** for the same reason — vests appear in hard-hat-detection photos without labels — plus few examples (~1,300 / ~900 boxes).
+- **Machinery and vehicle are very sparse** in training data (~190 and ~100 boxes) and in validation (14 and 8 boxes), so their scores are unreliable. The SafeSite app uses open-vocabulary YOLOE for extra objects.
 - Small, distant or heavily occluded heads are often missed; "no_helmet" can be confused with caps, scarves or hair.
 - Training photos are mostly not from Qatar; lighting, heat haze, clothing (e.g. head coverings under helmets) and site layouts in the Gulf may lower accuracy. Our separate Qatar test photos measure this honestly.
-- Vest / no_vest have few examples (~1,300 / ~900 boxes).
 - A detector only sees what is in frame; absence of a detection is not proof of safety.
 
 ## License — AGPL-3.0
