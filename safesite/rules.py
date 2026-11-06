@@ -12,16 +12,29 @@ from collections import Counter
 from collections.abc import Collection, Sequence
 
 from safesite import heat
-from safesite.types import Box, Detection, Hazard, Mode, SceneContext, Severity
+from safesite.types import MODEL_CLASSES_V2, Box, Detection, Hazard, Mode, SceneContext, Severity
 
 # --- Thresholds ---------------------------------------------------------------
 MIN_CONFIDENCE = 0.35  # cut-off for the trained detector (YOLO26s)
 OPEN_VOCAB_MIN_CONFIDENCE = 0.25  # cut-off for the open-vocabulary finder (YOLOE-26)
+# Per-label YOLOE cut-offs (unlisted labels use OPEN_VOCAB_MIN_CONFIDENCE).
+# Copy recommended values here from Chat 9's docs/prompt_bench.md.
+OPEN_VOCAB_CUTOFFS: dict[str, float] = {}
 HEAD_REGION_FRACTION = 0.25  # top quarter of a person box is their head region
 MACHINERY_ZONE_FACTOR = 0.5  # danger zone: within 0.5 x person height of machinery/vehicle
 FALL_ZONE_FACTOR = 0.25  # "near" a scaffold/ladder: within 0.25 x person height
 WALKWAY_TOP_Y = 2 / 3  # lower third of the frame (y > 2/3) is where people walk
 CHILD_REACH_MIN_Y = 0.5  # objects centred in the lower half of the frame are in a child's reach
+# v2 (starting values from chat-8-rules-v2.md; tune only with evidence)
+WORKER_DOWN_MIN_CONF = 0.5  # only a confident person box may count as lying down
+WORKER_DOWN_RATIO = 1.4  # real width / height at or above this = lying down
+WORKER_DOWN_MIN_HEIGHT = 0.04  # ignore tiny far-away boxes (fraction of image height)
+BORDER_MARGIN = 0.01  # a box this close to an edge is cut off (a cut-off torso looks wide)
+WORKER_DOWN_MAX_INSIDE = 0.6  # a person box >= 60% inside a machine/vehicle is its driver
+SUSPENDED_LOAD_FACTOR = 1.0  # crane hook within 1.0 x person height to the side
+SUSPENDED_LOAD_TOP_FRACTION = 0.1  # hook bottom may reach 0.1 x person height below their top
+POWER_LINE_FACTOR = 0.5  # machinery within 0.5 x its own height of a power pole / line
+HOT_WORK_FACTOR = 2.0  # welding within 2.0 x gas-cylinder height of the cylinder
 
 # --- Labels (normalized: lowercase, underscores) ------------------------------
 PERSON, HELMET, NO_HELMET = "person", "helmet", "no_helmet"
@@ -33,23 +46,54 @@ WET_FLOOR, KNIFE, CHEMICALS = "wet_floor", "knife", "chemicals"
 EXTENSION_CORD, CLEANING_CHEMICALS = "extension_cord", "cleaning_chemicals"
 CORD_LABELS = frozenset({CORD, EXTENSION_CORD})
 CHILD_REACH_LABELS = frozenset({KNIFE, CHEMICALS, CLEANING_CHEMICALS})
+# v2 labels: crane_hook and utility_pole come from the trained detector and YOLOE;
+# the rest only from YOLOE prompts (see the label contract in PLAN-v2.md).
+CRANE_HOOK, UTILITY_POLE, POWER_LINE = "crane_hook", "utility_pole", "power_line"
+WELDING, FIRE, GAS_CYLINDER = "welding", "fire", "gas_cylinder"
+FIRE_EXTINGUISHER, REBAR = "fire_extinguisher", "rebar"
+FLOOR_OPENING, TRENCH = "floor_opening", "trench"
 
 OPEN_VOCAB_LABELS = frozenset(
     {HARNESS, SCAFFOLD, LADDER, SHADE_TENT, WATER_COOLER, HOSE, WET_FLOOR}
     | CORD_LABELS
     | CHILD_REACH_LABELS
+    | {CRANE_HOOK, UTILITY_POLE, POWER_LINE, WELDING, FIRE, GAS_CYLINDER}
+    | {FIRE_EXTINGUISHER, REBAR, FLOOR_OPENING, TRENCH}
 )
-DISPLAY_NAME = {MACHINERY: "machine", NO_HELMET: "bare head", WET_FLOOR: "wet floor"}
+TRAINED_LABELS = frozenset(MODEL_CLASSES_V2)  # what the trained detector (v1 or v2) can output
+YOLOE_SOURCE, DETECTOR_SOURCE = "yoloe", "detector"  # Detection.source values
+DISPLAY_NAME = {
+    MACHINERY: "machine",
+    NO_HELMET: "bare head",
+    WET_FLOOR: "wet floor",
+    CRANE_HOOK: "crane hook",
+    UTILITY_POLE: "power pole",
+    POWER_LINE: "power line",
+    GAS_CYLINDER: "gas cylinder",
+    FIRE_EXTINGUISHER: "fire extinguisher",
+    FLOOR_OPENING: "floor opening",
+}
 IRREGULAR_PLURALS = {"knife": "knives"}  # display name -> plural, for reason strings
 
 
 # --- Geometry and filtering helpers -------------------------------------------
-def confidence_cutoff(label: str) -> float:
-    return OPEN_VOCAB_MIN_CONFIDENCE if label in OPEN_VOCAB_LABELS else MIN_CONFIDENCE
+def _open_vocab_cutoff(label: str) -> float:
+    return OPEN_VOCAB_CUTOFFS.get(label, OPEN_VOCAB_MIN_CONFIDENCE)
+
+
+def confidence_cutoff(detection: Detection) -> float:
+    """YOLOE output -> its per-label open-vocab cut-off; trained-detector output of a
+    trained class -> MIN_CONFIDENCE; anything else (mocks, hand-built detections) by label."""
+    label = detection.label
+    if detection.source == YOLOE_SOURCE:
+        return _open_vocab_cutoff(label)
+    if detection.source == DETECTOR_SOURCE and label in TRAINED_LABELS:
+        return MIN_CONFIDENCE
+    return _open_vocab_cutoff(label) if label in OPEN_VOCAB_LABELS else MIN_CONFIDENCE
 
 
 def confident(detections: Sequence[Detection]) -> list[Detection]:
-    return [d for d in detections if d.confidence >= confidence_cutoff(d.label)]
+    return [d for d in detections if d.confidence >= confidence_cutoff(d)]
 
 
 def with_labels(detections: Sequence[Detection], labels: Collection[str]) -> list[Detection]:
@@ -77,6 +121,34 @@ def head_region(box: Box) -> Box:
 
 def centre_y(box: Box) -> float:
     return (box[1] + box[3]) / 2
+
+
+def width_to_height(box: Box, aspect_ratio: float = 1.0) -> float:
+    """Box width / height in real pixels (same aspect_ratio conversion as ``gap``)."""
+    return (box[2] - box[0]) * aspect_ratio / height(box)
+
+
+def horizontal_gap(a: Box, b: Box, aspect_ratio: float = 1.0) -> float:
+    """Side-to-side distance between two boxes in image heights (0 when they overlap in x)."""
+    return max(0.0, b[0] - a[2], a[0] - b[2]) * aspect_ratio
+
+
+def touches_border(box: Box, margin: float = BORDER_MARGIN) -> bool:
+    return box[0] <= margin or box[1] <= margin or box[2] >= 1 - margin or box[3] >= 1 - margin
+
+
+def inside_fraction(inner: Box, outer: Box) -> float:
+    """Share of ``inner``'s area that lies inside ``outer`` (0-1)."""
+    w = max(0.0, min(inner[2], outer[2]) - max(inner[0], outer[0]))
+    h = max(0.0, min(inner[3], outer[3]) - max(inner[1], outer[1]))
+    return (w * h) / ((inner[2] - inner[0]) * height(inner))
+
+
+def _side(box: Box) -> str:
+    centre_x = (box[0] + box[2]) / 2
+    if centre_x < 1 / 3:
+        return "on the left"
+    return "on the right" if centre_x > 2 / 3 else "in the middle"
 
 
 def within_zone(
@@ -298,6 +370,193 @@ def heat_hazards(detections: Sequence[Detection], context: SceneContext) -> list
     return [h for h in found if h is not None]
 
 
+# --- Site rules v2 -------------------------------------------------------------------
+def _is_lying(person: Detection, machines: Sequence[Detection], aspect_ratio: float) -> bool:
+    box = person.box
+    return (
+        person.confidence >= WORKER_DOWN_MIN_CONF
+        and height(box) >= WORKER_DOWN_MIN_HEIGHT
+        and width_to_height(box, aspect_ratio) >= WORKER_DOWN_RATIO
+        and not touches_border(box)
+        and not any(inside_fraction(box, m.box) >= WORKER_DOWN_MAX_INSIDE for m in machines)
+    )
+
+
+def worker_down(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> list[Hazard]:
+    """Person box clearly wider than tall in real pixels: lying down (heat illness or fall)."""
+    machines = with_labels(detections, {MACHINERY, VEHICLE})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        if not _is_lying(person, machines, aspect_ratio):
+            continue
+        ratio = width_to_height(person.box, aspect_ratio)
+        hazards.append(
+            Hazard.of(
+                "worker_down",
+                f"Person {i + 1} is lying on the ground {_side(person.box)} "
+                f"(box {ratio:.1f}x wider than tall): possible heat illness or fall.",
+                (person.box,),
+                _subject(i),
+            )
+        )
+    return hazards
+
+
+def _hooks_over(
+    person: Detection, hooks: Sequence[Detection], aspect_ratio: float
+) -> list[tuple[Detection, float]]:
+    """Crane hooks above this person and close to the side of them, nearest first."""
+    tall = height(person.box)
+    lowest_bottom = person.box[1] + SUSPENDED_LOAD_TOP_FRACTION * tall
+    hits = [
+        (h, horizontal_gap(person.box, h.box, aspect_ratio))
+        for h in hooks
+        if h.box[3] <= lowest_bottom
+    ]
+    close = [(h, g) for h, g in hits if g <= SUSPENDED_LOAD_FACTOR * tall]
+    return sorted(close, key=lambda hit: hit[1])
+
+
+def under_suspended_load(
+    detections: Sequence[Detection], aspect_ratio: float = 1.0
+) -> list[Hazard]:
+    """Person below a crane hook (suspended load) and horizontally close to it."""
+    hooks = with_labels(detections, {CRANE_HOOK})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        close = _hooks_over(person, hooks, aspect_ratio)
+        if not close:
+            continue
+        side = close[0][1] / height(person.box)
+        where = "directly under" if side == 0 else f"{side:.2f}x their height to the side of"
+        hazards.append(
+            Hazard.of(
+                "under_suspended_load",
+                f"Person {i + 1} is {where} a crane hook (suspended load overhead).",
+                (person.box, *(h.box for h, _ in close)),
+                _subject(i),
+            )
+        )
+    return hazards
+
+
+def _unique_boxes(detections: Sequence[Detection]) -> tuple[Box, ...]:
+    return tuple(dict.fromkeys(d.box for d in detections))
+
+
+def power_line_contact(
+    detections: Sequence[Detection], aspect_ratio: float = 1.0
+) -> list[Hazard]:
+    """Machinery overlapping or within 0.5 x its height of a utility pole or power line."""
+    lines = with_labels(detections, {UTILITY_POLE, POWER_LINE})
+    pairs = [
+        (m, line, gap(m.box, line.box, aspect_ratio) / height(m.box))
+        for m in with_labels(detections, {MACHINERY})
+        for line in lines
+    ]
+    close = [p for p in pairs if p[2] <= POWER_LINE_FACTOR]
+    if not close:
+        return []
+    machine, line, distance = min(close, key=lambda p: p[2])
+    where = "overlaps" if distance == 0 else f"is {distance:.2f}x its height from"
+    involved = [d for m, ln, _ in close for d in (m, ln)]
+    return [
+        Hazard.of(
+            "power_line_contact",
+            f"A machine {where} a {_name(line.label)} "
+            f"(danger zone {POWER_LINE_FACTOR}x machine height).",
+            _unique_boxes(involved),
+        )
+    ]
+
+
+def _welding_near_cylinders(
+    detections: Sequence[Detection], aspect_ratio: float
+) -> list[tuple[Detection, Detection, float]]:
+    """(welding, cylinder, gap in cylinder heights) for pairs within HOT_WORK_FACTOR."""
+    cylinders = with_labels(detections, {GAS_CYLINDER})
+    pairs = [
+        (w, c, gap(w.box, c.box, aspect_ratio) / height(c.box))
+        for w in with_labels(detections, {WELDING})
+        for c in cylinders
+    ]
+    return [p for p in pairs if p[2] <= HOT_WORK_FACTOR]
+
+
+def hot_work_fire(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> list[Hazard]:
+    """Fire anywhere, or welding within 2.0 x gas-cylinder height of a gas cylinder."""
+    fires = with_labels(detections, {FIRE})
+    close = _welding_near_cylinders(detections, aspect_ratio)
+    if not fires and not close:
+        return []
+    causes = []
+    if fires:
+        causes.append(f"fire seen (confidence {max(f.confidence for f in fires):.2f})")
+    if close:
+        distance = min(p[2] for p in close)
+        where = "next to" if distance == 0 else f"{distance:.2f}x cylinder height from"
+        causes.append(f"welding {where} a gas cylinder")
+    involved = [*fires, *(d for w, c, _ in close for d in (w, c))]
+    return [
+        Hazard.of(
+            "hot_work_fire",
+            f"Hot work fire risk: {' and '.join(causes)}.",
+            _unique_boxes(involved),
+        )
+    ]
+
+
+def no_fire_extinguisher(detections: Sequence[Detection]) -> list[Hazard]:
+    """Welding or fire seen and no fire extinguisher anywhere in the photo."""
+    hot = with_labels(detections, {WELDING, FIRE})
+    if not hot or with_labels(detections, {FIRE_EXTINGUISHER}):
+        return []
+    seen = " and ".join(sorted({_name(d.label) for d in hot}))
+    return [
+        Hazard.of(
+            "no_fire_extinguisher",
+            f"Hot work ({seen}) seen with no fire extinguisher in the photo.",
+            _unique_boxes(hot),
+        )
+    ]
+
+
+def exposed_rebar(detections: Sequence[Detection]) -> list[Hazard]:
+    """Rebar seen with at least one worker present (impalement risk)."""
+    rebar = with_labels(detections, {REBAR})
+    workers = count_workers(detections)
+    if not rebar or workers < 1:
+        return []
+    noun = "worker" if workers == 1 else "workers"
+    return [
+        Hazard.of(
+            "exposed_rebar",
+            f"Exposed rebar seen with {workers} {noun} in the photo (impalement risk).",
+            _unique_boxes(rebar),
+        )
+    ]
+
+
+def fall_into_opening(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> list[Hazard]:
+    """Person within FALL_ZONE_FACTOR x their height of a floor opening or trench."""
+    openings = with_labels(detections, {FLOOR_OPENING, TRENCH})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        close = within_zone(person, openings, FALL_ZONE_FACTOR, aspect_ratio)
+        if not close:
+            continue
+        hazards.append(
+            Hazard.of(
+                "fall_into_opening",
+                f"Person {i + 1} {_where(person, close[0])} "
+                f"(fall zone {FALL_ZONE_FACTOR}x person height).",
+                (person.box, *(o.box for o, _ in close)),
+                _subject(i),
+            )
+        )
+    return hazards
+
+
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
@@ -358,5 +617,12 @@ def evaluate(detections: Sequence[Detection], context: SceneContext | None = Non
         *heat_hazards(dets, ctx),
         *no_vest_near_vehicle(dets, ratio),
         *trip_cord(dets),
+        *worker_down(dets, ratio),
+        *under_suspended_load(dets, ratio),
+        *power_line_contact(dets, ratio),
+        *hot_work_fire(dets, ratio),
+        *no_fire_extinguisher(dets),
+        *exposed_rebar(dets),
+        *fall_into_opening(dets, ratio),
     ]
     return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)

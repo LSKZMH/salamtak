@@ -504,3 +504,489 @@ def test_v2_class_contract_extends_v1_without_reordering():
     assert EXTENDED_CLASSES == ("harness", "scaffold", "crane_hook", "utility_pole")
     assert MODEL_CLASSES_V2 == UNIFIED_CLASSES + EXTENDED_CLASSES
     assert MODEL_CLASSES_V2.index("utility_pole") == 10
+
+
+# --- v2 labels and confidence cut-offs ---------------------------------------------------
+def src(label: str, conf: float, source: str, box=(0.1, 0.1, 0.2, 0.2)) -> Detection:
+    return Detection(label, conf, box, source)
+
+
+V2_OPEN_VOCAB = (
+    "power_line", "welding", "fire", "gas_cylinder", "fire_extinguisher", "rebar",
+    "floor_opening", "trench", "crane_hook", "utility_pole",
+)
+
+
+@pytest.mark.parametrize("label", V2_OPEN_VOCAB)
+def test_v2_open_vocab_labels_are_registered(label):
+    assert label in rules.OPEN_VOCAB_LABELS
+
+
+@pytest.mark.parametrize(
+    ("source", "conf", "kept"),
+    [
+        ("yoloe", 0.30, True),  # open-vocab cut-off 0.25
+        ("yoloe", 0.20, False),
+        ("detector", 0.30, False),  # trained class: MIN_CONFIDENCE 0.35
+        ("detector", 0.36, True),
+        ("mock", 0.30, True),  # mock: fall back by label (harness is open-vocab)
+    ],
+)
+def test_harness_cutoff_follows_detection_source(source, conf, kept):
+    assert bool(rules.confident([src("harness", conf, source)])) is kept
+
+
+def test_open_vocab_only_label_from_default_source_keeps_open_vocab_cutoff():
+    # A "cord" can never come from the trained detector, so the label decides.
+    assert rules.confident([src("cord", 0.30, "detector")])
+
+
+def test_open_vocab_cutoffs_override_per_label(monkeypatch):
+    monkeypatch.setattr(rules, "OPEN_VOCAB_CUTOFFS", {"fire": 0.5})
+    assert not rules.confident([src("fire", 0.45, "yoloe")])
+    assert rules.confident([src("fire", 0.55, "yoloe")])
+    assert rules.confident([src("rebar", 0.30, "yoloe")])  # unlisted: default 0.25
+
+
+def test_open_vocab_cutoffs_are_never_used_for_trained_detector_output(monkeypatch):
+    monkeypatch.setattr(rules, "OPEN_VOCAB_CUTOFFS", {"scaffold": 0.9})
+    assert rules.confident([src("scaffold", 0.40, "detector")])
+
+
+@pytest.mark.parametrize(
+    ("label", "name"),
+    [
+        ("crane_hook", "crane hook"),
+        ("utility_pole", "power pole"),
+        ("power_line", "power line"),
+        ("gas_cylinder", "gas cylinder"),
+        ("fire_extinguisher", "fire extinguisher"),
+        ("floor_opening", "floor opening"),
+    ],
+)
+def test_v2_display_names(label, name):
+    assert rules.DISPLAY_NAME[label] == name
+
+
+# --- worker_down -------------------------------------------------------------------------
+LYING = (0.30, 0.70, 0.60, 0.85)  # 0.30 wide x 0.15 tall: ratio 2.0
+
+
+def test_worker_down_flags_person_lying_on_the_ground():
+    hazards = rules.worker_down([person(LYING)])
+    assert ids(hazards) == ["worker_down"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject == "person:0"
+    assert "lying on the ground in the middle" in hazards[0].reason
+    assert "possible heat illness or fall" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    "box",
+    [PERSON, (0.40, 0.50, 0.49, 0.60)],  # standing; crouching (ratio 0.9)
+    ids=["standing", "crouching"],
+)
+def test_worker_down_clear_for_upright_people(box):
+    assert rules.worker_down([person(box)]) == []
+
+
+@pytest.mark.parametrize(
+    ("box", "down"),
+    [((0.40, 0.60, 0.539, 0.70), False), ((0.40, 0.60, 0.541, 0.70), True)],
+    ids=["ratio-1.39", "ratio-1.41"],
+)
+def test_worker_down_ratio_threshold(box, down):
+    assert bool(rules.worker_down([person(box)])) is down
+
+
+@pytest.mark.parametrize(
+    ("box", "down"),
+    [((0.40, 0.60, 0.50, 0.639), False), ((0.40, 0.60, 0.50, 0.641), True)],
+    ids=["height-0.039", "height-0.041"],
+)
+def test_worker_down_min_height(box, down):
+    assert bool(rules.worker_down([person(box)])) is down
+
+
+@pytest.mark.parametrize(("conf", "down"), [(0.49, False), (0.50, True)])
+def test_worker_down_needs_a_confident_person(conf, down):
+    assert bool(rules.worker_down([det("person", LYING, conf)])) is down
+
+
+def test_worker_down_uses_real_pixels_on_wide_and_tall_images():
+    square = (0.40, 0.60, 0.50, 0.70)  # 1.0 on a square image, 1.78 at 16:9
+    assert rules.worker_down([person(square)]) == []
+    assert ids(rules.worker_down([person(square)], aspect_ratio=16 / 9)) == ["worker_down"]
+    assert rules.worker_down([person(LYING)], aspect_ratio=9 / 16) == []  # 2.0 -> 1.125
+
+
+@pytest.mark.parametrize(
+    "box",
+    [(0.0, 0.70, 0.30, 0.85), (0.005, 0.70, 0.30, 0.85), (0.30, 0.85, 0.60, 1.0),
+     (0.70, 0.70, 0.995, 0.85)],
+    ids=["left-edge", "within-margin", "bottom-edge", "right-margin"],
+)
+def test_worker_down_ignores_boxes_cut_off_by_the_border(box):
+    assert rules.worker_down([person(box)]) == []
+
+
+def test_worker_down_flags_box_just_inside_the_border_margin():
+    assert ids(rules.worker_down([person((0.02, 0.70, 0.32, 0.85))])) == ["worker_down"]
+
+
+@pytest.mark.parametrize(
+    ("vehicle", "down"),
+    [
+        ((0.20, 0.60, 0.80, 0.95), False),  # fully inside: a driver
+        ((0.10, 0.50, 0.51, 0.95), False),  # 70% inside
+        ((0.10, 0.50, 0.42, 0.95), True),  # 40% inside
+    ],
+    ids=["inside", "70pct", "40pct"],
+)
+def test_worker_down_ignores_people_inside_a_vehicle(vehicle, down):
+    assert bool(rules.worker_down([person(LYING), det("vehicle", vehicle)])) is down
+
+
+def test_worker_down_ignores_people_inside_machinery():
+    assert rules.worker_down([person(LYING), det("machinery", (0.20, 0.60, 0.80, 0.95))]) == []
+
+
+def test_worker_down_once_per_person_and_names_the_side():
+    left, right = (0.05, 0.70, 0.25, 0.80), (0.70, 0.70, 0.95, 0.80)
+    hazards = rules.worker_down([person(left), person(PERSON), person(right)])
+    assert [h.subject for h in hazards] == ["person:0", "person:2"]
+    assert "on the left" in hazards[0].reason
+    assert "on the right" in hazards[1].reason
+
+
+def test_worker_down_runs_in_site_mode_only():
+    assert "worker_down" in ids(rules.evaluate([person(LYING)], INDOOR))
+    assert rules.evaluate([person(LYING)], SceneContext(mode=Mode.HOME)) == []
+
+
+# --- under_suspended_load (PERSON is 0.4 tall, top at y 0.30) ------------------------------
+HOOK_ABOVE = (0.43, 0.05, 0.47, 0.15)
+
+
+def test_suspended_load_flags_person_under_crane_hook():
+    hazards = rules.under_suspended_load([person(), det("crane_hook", HOOK_ABOVE)])
+    assert ids(hazards) == ["under_suspended_load"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject == "person:0"
+    assert "directly under a crane hook" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    ("hook", "flagged"),
+    [((0.43, 0.20, 0.47, 0.33), True), ((0.43, 0.20, 0.47, 0.35), False)],
+    ids=["bottom-0.03-below-top", "bottom-0.05-below-top"],
+)
+def test_suspended_load_hook_must_be_above_the_person(hook, flagged):
+    # limit: hook.y2 <= person.y1 + 0.1 x person height = 0.34
+    assert bool(rules.under_suspended_load([person(), det("crane_hook", hook)])) is flagged
+
+
+def test_suspended_load_clear_when_hook_is_below_the_person():
+    assert rules.under_suspended_load([person(), det("crane_hook", (0.43, 0.75, 0.47, 0.80))]) == []
+
+
+@pytest.mark.parametrize(
+    ("hook", "flagged"),
+    [((0.89, 0.05, 0.93, 0.15), True), ((0.91, 0.05, 0.95, 0.15), False)],
+    ids=["side-gap-0.39", "side-gap-0.41"],
+)
+def test_suspended_load_horizontal_threshold(hook, flagged):
+    # limit: 1.0 x person height = 0.4
+    found = rules.under_suspended_load([person(), det("crane_hook", hook)])
+    assert bool(found) is flagged
+    if flagged:
+        assert "0.98x their height to the side of a crane hook" in found[0].reason
+
+
+def test_suspended_load_uses_aspect_ratio_for_horizontal_gap():
+    hook = det("crane_hook", (0.89, 0.05, 0.93, 0.15))  # 0.39 -> 0.69 at 16:9
+    assert rules.under_suspended_load([person(), hook], aspect_ratio=16 / 9) == []
+
+
+def test_suspended_load_once_per_person_with_two_hooks():
+    hooks = [det("crane_hook", HOOK_ABOVE), det("crane_hook", (0.30, 0.05, 0.35, 0.12))]
+    hazards = rules.under_suspended_load([person(), *hooks])
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 3
+
+
+def test_suspended_load_flags_each_person_under_one_hook():
+    other = person((0.48, 0.30, 0.58, 0.70))
+    hazards = rules.under_suspended_load([person(), other, det("crane_hook", HOOK_ABOVE)])
+    assert [h.subject for h in hazards] == ["person:0", "person:1"]
+
+
+@pytest.mark.parametrize(("source", "flagged"), [("yoloe", True), ("detector", False)])
+def test_suspended_load_hook_cutoff_follows_source(source, flagged):
+    scene = [person(), src("crane_hook", 0.30, source, HOOK_ABOVE)]
+    assert ("under_suspended_load" in ids(rules.evaluate(scene, INDOOR))) is flagged
+
+
+# --- power_line_contact (MACHINE is 0.4 tall: zone 0.5 x 0.4 = 0.2) -------------------------
+MACHINE = (0.20, 0.50, 0.50, 0.90)
+
+
+def test_power_line_flags_machine_near_utility_pole():
+    hazards = rules.power_line_contact([det("machinery", MACHINE), det("utility_pole", (0.60, 0.10, 0.65, 0.90))])
+    assert ids(hazards) == ["power_line_contact"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject is None
+    assert "0.25x its height from a power pole" in hazards[0].reason
+
+
+def test_power_line_flags_machine_overlapping_power_line():
+    hazards = rules.power_line_contact([det("machinery", MACHINE), det("power_line", (0.0, 0.05, 1.0, 0.52))])
+    assert "machine overlaps a power line" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    ("pole", "flagged"),
+    [((0.69, 0.10, 0.74, 0.90), True), ((0.71, 0.10, 0.76, 0.90), False)],
+    ids=["gap-0.19", "gap-0.21"],
+)
+def test_power_line_distance_threshold(pole, flagged):
+    found = rules.power_line_contact([det("machinery", MACHINE), det("utility_pole", pole)])
+    assert bool(found) is flagged
+
+
+@pytest.mark.parametrize(
+    ("line", "flagged"),
+    [((0.0, 0.30, 1.0, 0.35), True), ((0.0, 0.20, 1.0, 0.25), False)],
+    ids=["line-0.15-above", "line-0.25-above"],
+)
+def test_power_line_overhead_line_threshold(line, flagged):
+    found = rules.power_line_contact([det("machinery", MACHINE), det("power_line", line)])
+    assert bool(found) is flagged
+
+
+def test_power_line_uses_aspect_ratio():
+    scene = [det("machinery", MACHINE), det("utility_pole", (0.69, 0.10, 0.74, 0.90))]
+    assert rules.power_line_contact(scene, aspect_ratio=16 / 9) == []  # 0.19 -> 0.34
+
+
+def test_power_line_only_counts_machinery_not_vehicles():
+    scene = [det("vehicle", MACHINE), det("utility_pole", (0.60, 0.10, 0.65, 0.90))]
+    assert rules.power_line_contact(scene) == []
+
+
+def test_power_line_clear_without_poles_or_lines():
+    assert rules.power_line_contact([det("machinery", MACHINE)]) == []
+
+
+def test_power_line_once_per_photo():
+    scene = [
+        det("machinery", MACHINE),
+        det("machinery", (0.55, 0.50, 0.85, 0.90)),
+        det("utility_pole", (0.52, 0.10, 0.54, 0.90)),
+        det("power_line", (0.0, 0.40, 1.0, 0.45)),
+    ]
+    hazards = rules.power_line_contact(scene)
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 4
+    assert "power pole" in hazards[0].reason  # names the nearest pair
+
+
+# --- hot_work_fire (CYLINDER is 0.2 tall: zone 2.0 x 0.2 = 0.4) ------------------------------
+WELD = (0.40, 0.40, 0.50, 0.50)
+CYLINDER = (0.55, 0.50, 0.60, 0.70)
+FIRE = (0.10, 0.60, 0.20, 0.80)
+
+
+def test_hot_work_flags_any_fire():
+    hazards = rules.hot_work_fire([det("fire", FIRE, 0.6)])
+    assert ids(hazards) == ["hot_work_fire"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject is None
+    assert "fire seen (confidence 0.60)" in hazards[0].reason
+
+
+def test_hot_work_flags_welding_next_to_gas_cylinder():
+    hazards = rules.hot_work_fire([det("welding", WELD), det("gas_cylinder", CYLINDER)])
+    assert ids(hazards) == ["hot_work_fire"]
+    assert "welding 0.25x cylinder height from a gas cylinder" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    ("cylinder", "flagged"),
+    [((0.89, 0.50, 0.94, 0.70), True), ((0.91, 0.50, 0.96, 0.70), False)],
+    ids=["gap-0.39", "gap-0.41"],
+)
+def test_hot_work_cylinder_distance_threshold(cylinder, flagged):
+    found = rules.hot_work_fire([det("welding", WELD), det("gas_cylinder", cylinder)])
+    assert bool(found) is flagged
+
+
+def test_hot_work_uses_aspect_ratio():
+    scene = [det("welding", WELD), det("gas_cylinder", (0.89, 0.50, 0.94, 0.70))]
+    assert rules.hot_work_fire(scene, aspect_ratio=16 / 9) == []  # 0.39 -> 0.69
+
+
+@pytest.mark.parametrize("label", ["welding", "gas_cylinder"])
+def test_hot_work_clear_for_welding_or_cylinder_alone(label):
+    assert rules.hot_work_fire([det(label, WELD)]) == []
+
+
+def test_hot_work_once_per_photo_and_names_both_causes():
+    scene = [
+        det("fire", FIRE, 0.6),
+        det("fire", (0.70, 0.60, 0.80, 0.80), 0.5),
+        det("welding", WELD),
+        det("gas_cylinder", CYLINDER),
+    ]
+    hazards = rules.hot_work_fire(scene)
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 4
+    assert "fire seen" in hazards[0].reason and "welding" in hazards[0].reason
+
+
+# --- no_fire_extinguisher ---------------------------------------------------------------------
+EXTINGUISHER = (0.80, 0.70, 0.85, 0.85)
+
+
+@pytest.mark.parametrize(("label", "named"), [("welding", "welding"), ("fire", "fire")])
+def test_no_extinguisher_flags_hot_work_without_extinguisher(label, named):
+    hazards = rules.no_fire_extinguisher([det(label, WELD)])
+    assert ids(hazards) == ["no_fire_extinguisher"]
+    assert hazards[0].severity is Severity.MEDIUM
+    assert hazards[0].subject is None
+    assert f"Hot work ({named}) seen with no fire extinguisher" in hazards[0].reason
+
+
+@pytest.mark.parametrize("label", ["welding", "fire"])
+def test_no_extinguisher_clear_when_extinguisher_anywhere(label):
+    assert rules.no_fire_extinguisher([det(label, WELD), det("fire_extinguisher", EXTINGUISHER)]) == []
+
+
+def test_no_extinguisher_clear_without_hot_work():
+    assert rules.no_fire_extinguisher([det("gas_cylinder", CYLINDER), person()]) == []
+
+
+def test_no_extinguisher_once_per_photo():
+    scene = [det("welding", WELD), det("welding", (0.10, 0.10, 0.20, 0.20)), det("fire", FIRE)]
+    hazards = rules.no_fire_extinguisher(scene)
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 3
+    assert "Hot work (fire and welding)" in hazards[0].reason
+
+
+def test_fire_alone_costs_a_high_and_a_medium():
+    found = rules.evaluate([det("fire", FIRE, 0.6)], INDOOR)
+    assert ids(found) == ["hot_work_fire", "no_fire_extinguisher"]
+    assert safety_score(found) == 65
+
+
+# --- exposed_rebar ------------------------------------------------------------------------------
+REBAR = (0.10, 0.75, 0.40, 0.95)
+
+
+def test_exposed_rebar_flags_rebar_with_a_worker():
+    hazards = rules.exposed_rebar([det("rebar", REBAR), person()])
+    assert ids(hazards) == ["exposed_rebar"]
+    assert hazards[0].severity is Severity.MEDIUM
+    assert hazards[0].subject is None
+    assert hazards[0].reason == "Exposed rebar seen with 1 worker in the photo (impalement risk)."
+
+
+def test_exposed_rebar_clear_without_workers():
+    assert rules.exposed_rebar([det("rebar", REBAR)]) == []
+
+
+def test_exposed_rebar_counts_a_lone_helmet_head_as_a_worker():
+    scene = [det("rebar", REBAR), det("helmet", (0.70, 0.10, 0.75, 0.16))]
+    assert ids(rules.exposed_rebar(scene)) == ["exposed_rebar"]
+
+
+def test_exposed_rebar_once_per_photo():
+    scene = [det("rebar", REBAR), det("rebar", (0.50, 0.75, 0.80, 0.95)), person(), person((0.6, 0.3, 0.7, 0.7))]
+    hazards = rules.exposed_rebar(scene)
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 2
+    assert "2 workers" in hazards[0].reason
+
+
+def test_exposed_rebar_clear_without_rebar():
+    assert rules.exposed_rebar([person()]) == []
+
+
+# --- fall_into_opening (PERSON is 0.4 tall: zone 0.25 x 0.4 = 0.1) --------------------------
+def test_fall_into_opening_flags_person_at_floor_opening():
+    hazards = rules.fall_into_opening([person(), det("floor_opening", (0.35, 0.65, 0.60, 0.80))])
+    assert ids(hazards) == ["fall_into_opening"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject == "person:0"
+    assert "overlaps a floor opening" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    ("trench", "flagged"),
+    [((0.59, 0.50, 0.90, 0.75), True), ((0.61, 0.50, 0.90, 0.75), False)],
+    ids=["gap-0.09", "gap-0.11"],
+)
+def test_fall_into_opening_distance_threshold(trench, flagged):
+    found = rules.fall_into_opening([person(), det("trench", trench)])
+    assert bool(found) is flagged
+    if flagged:
+        assert "their height from a trench" in found[0].reason
+
+
+def test_fall_into_opening_uses_aspect_ratio():
+    scene = [person(), det("trench", (0.59, 0.50, 0.90, 0.75))]
+    assert rules.fall_into_opening(scene, aspect_ratio=16 / 9) == []  # 0.09 -> 0.16
+
+
+def test_fall_into_opening_once_per_person():
+    scene = [
+        person(),
+        person((0.62, 0.30, 0.72, 0.70)),
+        det("trench", (0.52, 0.55, 0.60, 0.75)),
+        det("floor_opening", (0.35, 0.65, 0.45, 0.80)),
+    ]
+    hazards = rules.fall_into_opening(scene)
+    assert [h.subject for h in hazards] == ["person:0", "person:1"]
+    assert len(hazards[0].boxes) == 3
+
+
+# --- v2 rules in evaluate -------------------------------------------------------------------
+V2_SCENE = [
+    det("cord", (0.20, 0.85, 0.70, 0.90)),
+    det("knife", (0.40, 0.70, 0.50, 0.80)),
+    det("fire", FIRE),
+    det("welding", WELD),
+    det("rebar", REBAR),
+    det("crane_hook", HOOK_ABOVE),
+    det("utility_pole", (0.60, 0.10, 0.65, 0.90)),
+    det("machinery", MACHINE),
+    det("trench", (0.52, 0.55, 0.60, 0.75)),
+    person(),
+    person((0.66, 0.80, 0.96, 0.95)),  # lying, clear of the machine (LYING would be its driver)
+]
+
+
+def test_home_mode_output_is_unchanged_by_v2_objects():
+    home_only = [d for d in V2_SCENE if d.label in {"cord", "knife"}]
+    assert rules.evaluate(V2_SCENE, HOME) == rules.evaluate(home_only, HOME)
+    assert ids(rules.evaluate(V2_SCENE, HOME)) == ["home_trip", "home_child_reach"]
+
+
+def test_site_mode_runs_every_v2_rule_high_first():
+    found = rules.evaluate(V2_SCENE, INDOOR)
+    for hazard_id in (
+        "worker_down", "under_suspended_load", "power_line_contact", "hot_work_fire",
+        "fall_into_opening", "no_fire_extinguisher", "exposed_rebar",
+    ):
+        assert hazard_id in ids(found), hazard_id
+    severities = [h.severity for h in found]
+    assert severities == sorted(severities, key=lambda s: s is not Severity.HIGH)
+
+
+@pytest.mark.parametrize(
+    ("hazard_id", "subject", "score"),
+    [("worker_down", "person:0", 75), ("power_line_contact", None, 75), ("exposed_rebar", None, 90)],
+)
+def test_score_costs_25_per_new_high_and_10_per_new_medium(hazard_id, subject, score):
+    assert safety_score([_hazard(hazard_id, subject)]) == score
