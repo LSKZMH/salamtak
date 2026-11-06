@@ -18,7 +18,7 @@ from typing import Any
 import gradio as gr
 from PIL import Image
 
-from safesite import alerts, detect, openvocab
+from safesite import alerts, detect, live, openvocab
 from safesite.annotate import annotate
 from safesite.pipeline import Analysis, ImageTooLargeError, analyze_image
 from safesite.types import Hazard, SceneContext
@@ -70,6 +70,9 @@ PRIMARY, LOAD_WARNING = build_primary(os.environ.get("SAFESITE_DETECTOR", "mock"
 # variable SAFESITE_OPEN_VOCAB=0 to switch it off (tests do, so they never load the model).
 OPEN_VOCAB = os.environ.get("SAFESITE_OPEN_VOCAB", "1") != "0"
 DETECTOR = detect.CombinedDetector(PRIMARY, openvocab.OpenVocabDetector()) if OPEN_VOCAB else PRIMARY
+# Live tab: its own copy of the trained model (Ultralytics models are not thread-safe, and live frames
+# run alongside photo checks). Trained detector + rules only; YOLOE is too slow for live video.
+LIVE_DETECTOR, _ = build_primary(os.environ.get("SAFESITE_DETECTOR", "mock"))
 
 DOHA_TZ = timezone(timedelta(hours=3))  # Qatar: UTC+3, no DST
 EXIF_DATETIME_ORIGINAL = 0x9003
@@ -236,34 +239,37 @@ def build_ui() -> gr.Blocks:
                         "detector. Harness, scaffold, ladder, shade, water, cord and all Home-mode finds are real.")
         elif DETECTOR.is_mock:
             gr.Markdown("> **Demo mode:** the detector is a mock that returns fixed fake boxes for every photo.")
-        with gr.Row():
-            with gr.Column(scale=1):
-                image = gr.Image(label="Photo", type="pil", sources=["upload", "webcam"])
-                when = gr.Textbox(
-                    label="Date/time override (optional, Doha time)",
-                    info="Format YYYY-MM-DD HH:MM. Leave blank to use the photo's own time, else now.",
-                    placeholder="2026-11-06 14:30", lines=1, max_lines=1,
-                )
-                wbgt = gr.Number(label="WBGT °C (optional)", value=None, minimum=WBGT_MIN, maximum=WBGT_MAX)
-                outdoor = gr.Checkbox(label="Outdoor", value=True)
-                lang = gr.Dropdown(
-                    label="Alert language",
-                    choices=[(name, code) for code, name in LANGUAGES.items()],
-                    value="en",
-                )
-                mode = gr.Radio(label="Mode", choices=["Site", "Home"], value="Site")
-                run = gr.Button("Check safety", variant="primary")
-            with gr.Column(scale=1):
-                score_box = gr.HTML()
-                alert_box = gr.HTML()
-                annotated = gr.Image(label="Annotated photo (HIGH = red, MED = orange); hazards listed below",
-                                     type="pil", format="jpeg")
-                table = gr.Dataframe(headers=TABLE_HEADERS, label="Hazards", wrap=True, interactive=False)
+        with gr.Tab("Photo"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    image = gr.Image(label="Photo", type="pil", sources=["upload", "webcam"])
+                    when = gr.Textbox(
+                        label="Date/time override (optional, Doha time)",
+                        info="Format YYYY-MM-DD HH:MM. Leave blank to use the photo's own time, else now.",
+                        placeholder="2026-11-06 14:30", lines=1, max_lines=1,
+                    )
+                    wbgt = gr.Number(label="WBGT °C (optional)", value=None, minimum=WBGT_MIN, maximum=WBGT_MAX)
+                    outdoor = gr.Checkbox(label="Outdoor", value=True)
+                    lang = gr.Dropdown(
+                        label="Alert language",
+                        choices=[(name, code) for code, name in LANGUAGES.items()],
+                        value="en",
+                    )
+                    mode = gr.Radio(label="Mode", choices=["Site", "Home"], value="Site")
+                    run = gr.Button("Check safety", variant="primary")
+                with gr.Column(scale=1):
+                    score_box = gr.HTML()
+                    alert_box = gr.HTML()
+                    annotated = gr.Image(label="Annotated photo (HIGH = red, MED = orange); hazards listed below",
+                                         type="pil", format="jpeg")
+                    table = gr.Dataframe(headers=TABLE_HEADERS, label="Hazards", wrap=True, interactive=False)
 
-        inputs = [image, when, wbgt, outdoor, lang, mode]
-        outputs = [score_box, alert_box, annotated, table]
-        run.click(analyze, inputs, outputs, concurrency_limit=CONCURRENCY)
-        gr.Examples(EXAMPLES, inputs, outputs, fn=analyze, cache_examples=False, run_on_click=True)
+            inputs = [image, when, wbgt, outdoor, lang, mode]
+            outputs = [score_box, alert_box, annotated, table]
+            run.click(analyze, inputs, outputs, concurrency_limit=CONCURRENCY)
+            gr.Examples(EXAMPLES, inputs, outputs, fn=analyze, cache_examples=False, run_on_click=True)
+        with gr.Tab("Live"):
+            live.build_live_tab(LIVE_DETECTOR, LANGUAGES, _alerts_html)
     return demo.queue(max_size=QUEUE_SIZE, default_concurrency_limit=CONCURRENCY)
 
 
