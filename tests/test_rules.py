@@ -911,3 +911,82 @@ def test_exposed_rebar_once_per_photo():
 
 def test_exposed_rebar_clear_without_rebar():
     assert rules.exposed_rebar([person()]) == []
+
+
+# --- fall_into_opening (PERSON is 0.4 tall: zone 0.25 x 0.4 = 0.1) --------------------------
+def test_fall_into_opening_flags_person_at_floor_opening():
+    hazards = rules.fall_into_opening([person(), det("floor_opening", (0.35, 0.65, 0.60, 0.80))])
+    assert ids(hazards) == ["fall_into_opening"]
+    assert hazards[0].severity is Severity.HIGH
+    assert hazards[0].subject == "person:0"
+    assert "overlaps a floor opening" in hazards[0].reason
+
+
+@pytest.mark.parametrize(
+    ("trench", "flagged"),
+    [((0.59, 0.50, 0.90, 0.75), True), ((0.61, 0.50, 0.90, 0.75), False)],
+    ids=["gap-0.09", "gap-0.11"],
+)
+def test_fall_into_opening_distance_threshold(trench, flagged):
+    found = rules.fall_into_opening([person(), det("trench", trench)])
+    assert bool(found) is flagged
+    if flagged:
+        assert "their height from a trench" in found[0].reason
+
+
+def test_fall_into_opening_uses_aspect_ratio():
+    scene = [person(), det("trench", (0.59, 0.50, 0.90, 0.75))]
+    assert rules.fall_into_opening(scene, aspect_ratio=16 / 9) == []  # 0.09 -> 0.16
+
+
+def test_fall_into_opening_once_per_person():
+    scene = [
+        person(),
+        person((0.62, 0.30, 0.72, 0.70)),
+        det("trench", (0.52, 0.55, 0.60, 0.75)),
+        det("floor_opening", (0.35, 0.65, 0.45, 0.80)),
+    ]
+    hazards = rules.fall_into_opening(scene)
+    assert [h.subject for h in hazards] == ["person:0", "person:1"]
+    assert len(hazards[0].boxes) == 3
+
+
+# --- v2 rules in evaluate -------------------------------------------------------------------
+V2_SCENE = [
+    det("cord", (0.20, 0.85, 0.70, 0.90)),
+    det("knife", (0.40, 0.70, 0.50, 0.80)),
+    det("fire", FIRE),
+    det("welding", WELD),
+    det("rebar", REBAR),
+    det("crane_hook", HOOK_ABOVE),
+    det("utility_pole", (0.60, 0.10, 0.65, 0.90)),
+    det("machinery", MACHINE),
+    det("trench", (0.52, 0.55, 0.60, 0.75)),
+    person(),
+    person((0.66, 0.80, 0.96, 0.95)),  # lying, clear of the machine (LYING would be its driver)
+]
+
+
+def test_home_mode_output_is_unchanged_by_v2_objects():
+    home_only = [d for d in V2_SCENE if d.label in {"cord", "knife"}]
+    assert rules.evaluate(V2_SCENE, HOME) == rules.evaluate(home_only, HOME)
+    assert ids(rules.evaluate(V2_SCENE, HOME)) == ["home_trip", "home_child_reach"]
+
+
+def test_site_mode_runs_every_v2_rule_high_first():
+    found = rules.evaluate(V2_SCENE, INDOOR)
+    for hazard_id in (
+        "worker_down", "under_suspended_load", "power_line_contact", "hot_work_fire",
+        "fall_into_opening", "no_fire_extinguisher", "exposed_rebar",
+    ):
+        assert hazard_id in ids(found), hazard_id
+    severities = [h.severity for h in found]
+    assert severities == sorted(severities, key=lambda s: s is not Severity.HIGH)
+
+
+@pytest.mark.parametrize(
+    ("hazard_id", "subject", "score"),
+    [("worker_down", "person:0", 75), ("power_line_contact", None, 75), ("exposed_rebar", None, 90)],
+)
+def test_score_costs_25_per_new_high_and_10_per_new_medium(hazard_id, subject, score):
+    assert safety_score([_hazard(hazard_id, subject)]) == score

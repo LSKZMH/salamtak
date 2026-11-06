@@ -537,6 +537,26 @@ def exposed_rebar(detections: Sequence[Detection]) -> list[Hazard]:
     ]
 
 
+def fall_into_opening(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> list[Hazard]:
+    """Person within FALL_ZONE_FACTOR x their height of a floor opening or trench."""
+    openings = with_labels(detections, {FLOOR_OPENING, TRENCH})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        close = within_zone(person, openings, FALL_ZONE_FACTOR, aspect_ratio)
+        if not close:
+            continue
+        hazards.append(
+            Hazard.of(
+                "fall_into_opening",
+                f"Person {i + 1} {_where(person, close[0])} "
+                f"(fall zone {FALL_ZONE_FACTOR}x person height).",
+                (person.box, *(o.box for o, _ in close)),
+                _subject(i),
+            )
+        )
+    return hazards
+
+
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
@@ -603,5 +623,6 @@ def evaluate(detections: Sequence[Detection], context: SceneContext | None = Non
         *hot_work_fire(dets, ratio),
         *no_fire_extinguisher(dets),
         *exposed_rebar(dets),
+        *fall_into_opening(dets, ratio),
     ]
     return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)
