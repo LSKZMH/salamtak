@@ -74,12 +74,24 @@ def wbgt_stop(wbgt_c: float | None, worker_count: int) -> Hazard | None:
 
 
 def heat_welfare_gap(
-    outdoor: bool, worker_count: int, shade_seen: bool, water_seen: bool
+    outdoor: bool,
+    worker_count: int,
+    shade_seen: bool,
+    water_seen: bool,
+    taken_at: datetime | None = None,
 ) -> Hazard | None:
-    """Outdoor workers and neither a shade tent nor a water cooler detected."""
-    if not outdoor or worker_count < 1 or shade_seen or water_seen:
+    """Outdoor workers in the summer heat season (1 Jun-15 Sep, the midday-ban window) and
+    neither a shade tent nor a water cooler detected.
+
+    Team decision 6 Nov 2026: outside summer a missing shade tent is not a heat hazard, and
+    firing all year would put a false alarm on every outdoor photo. No time = not judged.
+    """
+    if not outdoor or worker_count < 1 or shade_seen or water_seen or taken_at is None:
+        return None
+    if not in_ban_season(to_doha_time(taken_at).date()):
         return None
     return Hazard.of(
         "heat_welfare_gap",
-        f"{_workers(worker_count)} outdoors and no shade tent or water cooler seen.",
+        f"{_workers(worker_count)} outdoors in the summer heat season and no shade tent "
+        "or water cooler seen.",
     )
