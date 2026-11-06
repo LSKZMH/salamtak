@@ -121,9 +121,10 @@ def test_alerts_are_escaped_and_tagged_with_language(fake_alerts):
     assert html_out.count("<li") == 1  # same id twice -> one alert
 
 
-def test_rtl_unverified_translation_is_marked(fake_alerts):
+def test_rtl_translation_shows_without_unverified_label(fake_alerts):
+    # Workers see the alert alone; the "verified" flag stays in alerts.json for the team, not in the UI.
     html_out = app._alerts_html([Hazard.of("no_helmet", "r")], "ar", table=fake_alerts)
-    assert "lang='ar' dir='rtl'" in html_out and "unverified translation" in html_out
+    assert "lang='ar' dir='rtl'" in html_out and "unverified" not in html_out
 
 
 def test_missing_translation_falls_back_to_english_with_note(fake_alerts):

@@ -158,11 +158,9 @@ def _score_html(result: Analysis, taken_at: datetime, source: str, secs: float) 
 
 def _alert_item(a: alerts.Alert, requested: str) -> str:
     direction = "rtl" if a.language in RTL_LANGUAGES else "ltr"
-    note = ""
-    if a.language != requested:
-        note = "English: no translation yet"
-    elif not a.verified:
-        note = "unverified translation"
+    # Only the English fallback is labelled; translations show without an "unverified" tag
+    # (alerts.json still records which ones a native speaker has checked).
+    note = "English: no translation yet" if a.language != requested else ""
     tail = f" <small lang='en' dir='ltr'>({note})</small>" if note else ""
     return (f"<li lang='{a.language}' dir='{direction}'><span aria-hidden='true'>⚠️</span> "
             f"{html.escape(a.text)}{tail}</li>")
