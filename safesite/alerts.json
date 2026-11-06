@@ -1,0 +1,105 @@
+{
+  "_meta": {
+    "note": "Non-English phrases are machine-drafted. Keep \"verified\": false until a native speaker on the team confirms each one.",
+    "languages": ["en", "ar", "hi", "bn", "ne", "ur", "ml"]
+  },
+  "no_helmet": {
+    "en": {"text": "Wear your helmet now.", "verified": true},
+    "ar": {"text": "ارتدِ خوذتك الآن.", "verified": false},
+    "hi": {"text": "अभी अपना हेलमेट पहनें।", "verified": false},
+    "bn": {"text": "এখনই আপনার হেলমেট পরুন।", "verified": false},
+    "ne": {"text": "अहिले नै हेलमेट लगाउनुहोस्।", "verified": false},
+    "ur": {"text": "ابھی اپنا ہیلمٹ پہنیں۔", "verified": false},
+    "ml": {"text": "ഇപ്പോൾ തന്നെ ഹെൽമെറ്റ് ധരിക്കുക.", "verified": false}
+  },
+  "machinery_zone": {
+    "en": {"text": "Step away from the machine.", "verified": true},
+    "ar": {"text": "ابتعد عن الآلة.", "verified": false},
+    "hi": {"text": "मशीन से दूर हटें।", "verified": false},
+    "bn": {"text": "মেশিন থেকে দূরে সরে যান।", "verified": false},
+    "ne": {"text": "मेसिनबाट टाढा हट्नुहोस्।", "verified": false},
+    "ur": {"text": "مشین سے دور ہٹ جائیں۔", "verified": false},
+    "ml": {"text": "യന്ത്രത്തിൽ നിന്ന് മാറി നിൽക്കുക.", "verified": false}
+  },
+  "fall_no_harness": {
+    "en": {"text": "Clip on your harness before climbing.", "verified": true},
+    "ar": {"text": "اربط حزام الأمان قبل الصعود.", "verified": false},
+    "hi": {"text": "चढ़ने से पहले अपना हार्नेस लगाएँ।", "verified": false},
+    "bn": {"text": "ওঠার আগে আপনার হারনেস লাগান।", "verified": false},
+    "ne": {"text": "चढ्नुअघि हार्नेस लगाउनुहोस्।", "verified": false},
+    "ur": {"text": "چڑھنے سے پہلے اپنا ہارنس باندھیں۔", "verified": false},
+    "ml": {"text": "കയറുന്നതിന് മുമ്പ് ഹാർനെസ് ധരിക്കുക.", "verified": false}
+  },
+  "midday_ban": {
+    "en": {"text": "Stop outdoor work until 3:30 PM.", "verified": true},
+    "ar": {"text": "أوقف العمل في الخارج حتى الساعة 3:30 مساءً.", "verified": false},
+    "hi": {"text": "दोपहर 3:30 बजे तक बाहर का काम रोकें।", "verified": false},
+    "bn": {"text": "বিকেল ৩:৩০ পর্যন্ত বাইরের কাজ বন্ধ রাখুন।", "verified": false},
+    "ne": {"text": "दिउँसो ३:३० बजेसम्म बाहिरको काम रोक्नुहोस्।", "verified": false},
+    "ur": {"text": "سہ پہر 3:30 بجے تک باہر کا کام روک دیں۔", "verified": false},
+    "ml": {"text": "ഉച്ചയ്ക്ക് 3:30 വരെ പുറത്തെ ജോലി നിർത്തുക.", "verified": false}
+  },
+  "wbgt_stop": {
+    "en": {"text": "Stop work now: the heat is too high.", "verified": true},
+    "ar": {"text": "أوقف العمل الآن: الحرارة مرتفعة جدًا.", "verified": false},
+    "hi": {"text": "अभी काम रोकें: गर्मी बहुत ज़्यादा है।", "verified": false},
+    "bn": {"text": "এখনই কাজ বন্ধ করুন: গরম খুব বেশি।", "verified": false},
+    "ne": {"text": "अहिले नै काम रोक्नुहोस्: गर्मी धेरै छ।", "verified": false},
+    "ur": {"text": "ابھی کام روک دیں: گرمی بہت زیادہ ہے۔", "verified": false},
+    "ml": {"text": "ഇപ്പോൾ ജോലി നിർത്തുക: ചൂട് വളരെ കൂടുതലാണ്.", "verified": false}
+  },
+  "no_vest_near_vehicle": {
+    "en": {"text": "Put on your safety vest near vehicles.", "verified": true},
+    "ar": {"text": "ارتدِ سترة السلامة قرب المركبات.", "verified": false},
+    "hi": {"text": "वाहनों के पास सेफ़्टी जैकेट पहनें।", "verified": false},
+    "bn": {"text": "গাড়ির কাছে সেফটি ভেস্ট পরুন।", "verified": false},
+    "ne": {"text": "सवारी साधन नजिक सेफ्टी भेस्ट लगाउनुहोस्।", "verified": false},
+    "ur": {"text": "گاڑیوں کے قریب سیفٹی جیکٹ پہنیں۔", "verified": false},
+    "ml": {"text": "വാഹനങ്ങൾക്ക് സമീപം സേഫ്റ്റി വെസ്റ്റ് ധരിക്കുക.", "verified": false}
+  },
+  "heat_welfare_gap": {
+    "en": {"text": "Rest in the shade and drink water.", "verified": true},
+    "ar": {"text": "استرح في الظل واشرب الماء.", "verified": false},
+    "hi": {"text": "छाँव में आराम करें और पानी पिएँ।", "verified": false},
+    "bn": {"text": "ছায়ায় বিশ্রাম নিন এবং পানি পান করুন।", "verified": false},
+    "ne": {"text": "छायाँमा आराम गर्नुहोस् र पानी पिउनुहोस्।", "verified": false},
+    "ur": {"text": "سائے میں آرام کریں اور پانی پئیں۔", "verified": false},
+    "ml": {"text": "തണലിൽ വിശ്രമിക്കുക, വെള്ളം കുടിക്കുക.", "verified": false}
+  },
+  "trip_cord": {
+    "en": {"text": "Watch your step: cable on the path.", "verified": true},
+    "ar": {"text": "انتبه لخطواتك: يوجد كابل في الممر.", "verified": false},
+    "hi": {"text": "ध्यान से चलें: रास्ते में तार है।", "verified": false},
+    "bn": {"text": "সাবধানে হাঁটুন: পথে তার আছে।", "verified": false},
+    "ne": {"text": "ध्यान दिएर हिँड्नुहोस्: बाटोमा तार छ।", "verified": false},
+    "ur": {"text": "دھیان سے چلیں: راستے میں تار ہے۔", "verified": false},
+    "ml": {"text": "ശ്രദ്ധിച്ച് നടക്കുക: വഴിയിൽ കേബിൾ ഉണ്ട്.", "verified": false}
+  },
+  "home_trip": {
+    "en": {"text": "Move the cord off the floor.", "verified": true},
+    "ar": {"text": "أبعد السلك عن الأرض.", "verified": false},
+    "hi": {"text": "तार को फ़र्श से हटाएँ।", "verified": false},
+    "bn": {"text": "মেঝে থেকে তারটি সরান।", "verified": false},
+    "ne": {"text": "तारलाई भुइँबाट हटाउनुहोस्।", "verified": false},
+    "ur": {"text": "تار کو فرش سے ہٹا دیں۔", "verified": false},
+    "ml": {"text": "തറയിൽ നിന്ന് വയർ മാറ്റുക.", "verified": false}
+  },
+  "home_slip": {
+    "en": {"text": "Dry the wet floor now.", "verified": true},
+    "ar": {"text": "جفّف الأرضية المبللة الآن.", "verified": false},
+    "hi": {"text": "गीले फ़र्श को अभी सुखाएँ।", "verified": false},
+    "bn": {"text": "ভেজা মেঝে এখনই শুকিয়ে নিন।", "verified": false},
+    "ne": {"text": "भिजेको भुइँ अहिले नै सुकाउनुहोस्।", "verified": false},
+    "ur": {"text": "گیلا فرش ابھی خشک کریں۔", "verified": false},
+    "ml": {"text": "നനഞ്ഞ തറ ഇപ്പോൾ തന്നെ ഉണക്കുക.", "verified": false}
+  },
+  "home_child_reach": {
+    "en": {"text": "Move knives and chemicals out of children's reach.", "verified": true},
+    "ar": {"text": "ضع السكاكين والمواد الكيميائية بعيدًا عن متناول الأطفال.", "verified": false},
+    "hi": {"text": "चाकू और रसायन बच्चों की पहुँच से दूर रखें।", "verified": false},
+    "bn": {"text": "ছুরি ও রাসায়নিক শিশুদের নাগালের বাইরে রাখুন।", "verified": false},
+    "ne": {"text": "चक्कु र रसायनहरू बालबालिकाको पहुँचबाट टाढा राख्नुहोस्।", "verified": false},
+    "ur": {"text": "چاقو اور کیمیکل بچوں کی پہنچ سے دور رکھیں۔", "verified": false},
+    "ml": {"text": "കത്തികളും രാസവസ്തുക്കളും കുട്ടികൾക്ക് എത്താത്തിടത്ത് വയ്ക്കുക.", "verified": false}
+  }
+}

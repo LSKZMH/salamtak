@@ -1,0 +1,4 @@
+-r requirements.txt
+gradio==6.31.0
+pytest
+pytest-cov

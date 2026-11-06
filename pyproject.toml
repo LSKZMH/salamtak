@@ -1,0 +1,29 @@
+[project]
+name = "safesite"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "black>=24", "mypy>=1.11", "bandit>=1.7"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["--strict-markers"]
+markers = ["unit: fast, pure-Python tests with no models or network"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "B", "UP", "SIM", "RUF", "PT"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["safesite"]

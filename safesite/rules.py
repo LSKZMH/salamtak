@@ -1,0 +1,343 @@
+"""Hazard rules: normalized detections + scene context -> hazards.
+
+Pure functions, no model or I/O imports. The "Hazard rules" table in CLAUDE.md is
+the source of truth; keep this module, tests/test_rules.py and that table in sync.
+Every hazard carries a one-line plain-English ``reason`` naming what was seen.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Collection, Sequence
+
+from safesite import heat
+from safesite.types import Box, Detection, Hazard, Mode, SceneContext, Severity
+
+# --- Thresholds ---------------------------------------------------------------
+MIN_CONFIDENCE = 0.35  # cut-off for the trained detector (YOLO26s)
+OPEN_VOCAB_MIN_CONFIDENCE = 0.25  # cut-off for the open-vocabulary finder (YOLOE-26)
+HEAD_REGION_FRACTION = 0.25  # top quarter of a person box is their head region
+MACHINERY_ZONE_FACTOR = 0.5  # danger zone: within 0.5 x person height of machinery/vehicle
+FALL_ZONE_FACTOR = 0.25  # "near" a scaffold/ladder: within 0.25 x person height
+WALKWAY_TOP_Y = 2 / 3  # lower third of the frame (y > 2/3) is where people walk
+CHILD_REACH_MIN_Y = 0.5  # objects centred in the lower half of the frame are in a child's reach
+
+# --- Labels (normalized: lowercase, underscores) ------------------------------
+PERSON, HELMET, NO_HELMET = "person", "helmet", "no_helmet"
+VEST, NO_VEST, MACHINERY, VEHICLE = "vest", "no_vest", "machinery", "vehicle"
+HARNESS, SCAFFOLD, LADDER = "harness", "scaffold", "ladder"
+SHADE_TENT, WATER_COOLER, CORD, HOSE = "shade_tent", "water_cooler", "cord", "hose"
+WET_FLOOR, KNIFE, CHEMICALS = "wet_floor", "knife", "chemicals"
+
+OPEN_VOCAB_LABELS = frozenset(
+    {HARNESS, SCAFFOLD, LADDER, SHADE_TENT, WATER_COOLER, CORD, HOSE, WET_FLOOR, KNIFE, CHEMICALS}
+)
+DISPLAY_NAME = {MACHINERY: "machine", NO_HELMET: "bare head", WET_FLOOR: "wet floor"}
+
+
+# --- Geometry and filtering helpers -------------------------------------------
+def confidence_cutoff(label: str) -> float:
+    return OPEN_VOCAB_MIN_CONFIDENCE if label in OPEN_VOCAB_LABELS else MIN_CONFIDENCE
+
+
+def confident(detections: Sequence[Detection]) -> list[Detection]:
+    return [d for d in detections if d.confidence >= confidence_cutoff(d.label)]
+
+
+def with_labels(detections: Sequence[Detection], labels: Collection[str]) -> list[Detection]:
+    return [d for d in detections if d.label in labels]
+
+
+def overlaps(a: Box, b: Box) -> bool:
+    return min(a[2], b[2]) > max(a[0], b[0]) and min(a[3], b[3]) > max(a[1], b[1])
+
+
+def gap(a: Box, b: Box, aspect_ratio: float = 1.0) -> float:
+    """Shortest distance between two boxes in image heights (0 when they touch or overlap)."""
+    dx = max(0.0, b[0] - a[2], a[0] - b[2]) * aspect_ratio
+    dy = max(0.0, b[1] - a[3], a[1] - b[3])
+    return math.hypot(dx, dy)
+
+
+def height(box: Box) -> float:
+    return box[3] - box[1]
+
+
+def head_region(box: Box) -> Box:
+    return (box[0], box[1], box[2], box[1] + HEAD_REGION_FRACTION * height(box))
+
+
+def centre_y(box: Box) -> float:
+    return (box[1] + box[3]) / 2
+
+
+def within_zone(
+    person: Detection, others: Sequence[Detection], factor: float, aspect_ratio: float
+) -> list[tuple[Detection, float]]:
+    """Objects within ``factor`` x person height of the person, nearest first, with their gap."""
+    limit = factor * height(person.box)
+    hits = [(o, gap(person.box, o.box, aspect_ratio)) for o in others]
+    return sorted([(o, g) for o, g in hits if g <= limit], key=lambda hit: hit[1])
+
+
+def _name(label: str) -> str:
+    return DISPLAY_NAME.get(label, label.replace("_", " "))
+
+
+def _where(person: Detection, nearest: tuple[Detection, float]) -> str:
+    obj, distance = nearest
+    if distance == 0:
+        return f"overlaps a {_name(obj.label)}"
+    return f"is {distance / height(person.box):.2f}x their height from a {_name(obj.label)}"
+
+
+def _subject(index: int) -> str:
+    return f"person:{index}"
+
+
+def count_workers(detections: Sequence[Detection]) -> int:
+    """Person boxes plus helmet / bare-head boxes that sit outside every person box."""
+    people = with_labels(detections, {PERSON})
+    heads = with_labels(detections, {HELMET, NO_HELMET})
+    lone_heads = [h for h in heads if not any(overlaps(h.box, p.box) for p in people)]
+    return len(people) + len(lone_heads)
+
+
+# --- Site rules ----------------------------------------------------------------
+def _bare_heads_of(
+    person: Detection, people: Sequence[Detection], bare: Sequence[Detection]
+) -> list[Detection]:
+    """no_helmet boxes on this person's head region, plus boxes that overlap this
+    person's body but nobody's head region (so no bare-head box is ever dropped)."""
+    head = head_region(person.box)
+    heads = [head_region(p.box) for p in people]
+    return [
+        b
+        for b in bare
+        if overlaps(b.box, head)
+        or (overlaps(b.box, person.box) and not any(overlaps(b.box, h) for h in heads))
+    ]
+
+
+def _person_no_helmet(
+    index: int, person: Detection, helmets: Sequence[Detection], bare_on_head: Sequence[Detection]
+) -> Hazard | None:
+    head = head_region(person.box)
+    if bare_on_head:
+        best = max(b.confidence for b in bare_on_head)
+        return Hazard.of(
+            "no_helmet",
+            f"Person {index + 1}: bare head detected (no_helmet, confidence {best:.2f}).",
+            (person.box, *(b.box for b in bare_on_head)),
+            _subject(index),
+        )
+    if any(overlaps(h.box, head) for h in helmets):
+        return None
+    return Hazard.of(
+        "no_helmet",
+        f"Person {index + 1}: no helmet seen on their head.",
+        (person.box,),
+        _subject(index),
+    )
+
+
+def no_helmet(detections: Sequence[Detection]) -> list[Hazard]:
+    """Person with a no_helmet box, or no helmet box overlapping their head region.
+
+    A no_helmet box outside every person box is itself a worker's head (the main
+    hard-hat dataset has no person class), so it raises one hazard of its own.
+    """
+    people = with_labels(detections, {PERSON})
+    helmets = with_labels(detections, {HELMET})
+    bare = with_labels(detections, {NO_HELMET})
+    found = [
+        _person_no_helmet(i, p, helmets, _bare_heads_of(p, people, bare))
+        for i, p in enumerate(people)
+    ]
+    hazards = [h for h in found if h is not None]
+    for k, head in enumerate(bare):
+        if any(overlaps(head.box, p.box) for p in people):
+            continue
+        hazards.append(
+            Hazard.of(
+                "no_helmet",
+                f"Bare head detected with no helmet (no_helmet, confidence {head.confidence:.2f}).",
+                (head.box,),
+                f"head:{k}",
+            )
+        )
+    return hazards
+
+
+def machinery_zone(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> list[Hazard]:
+    """Person overlaps or is within 0.5 x their height of a machinery/vehicle box."""
+    machines = with_labels(detections, {MACHINERY, VEHICLE})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        close = within_zone(person, machines, MACHINERY_ZONE_FACTOR, aspect_ratio)
+        if close:
+            hazards.append(
+                Hazard.of(
+                    "machinery_zone",
+                    f"Person {i + 1} {_where(person, close[0])} "
+                    f"(danger zone {MACHINERY_ZONE_FACTOR}x person height).",
+                    (person.box, *(m.box for m, _ in close)),
+                    _subject(i),
+                )
+            )
+    return hazards
+
+
+def fall_no_harness(detections: Sequence[Detection], aspect_ratio: float = 1.0) -> list[Hazard]:
+    """Person on/near a scaffold or ladder with no harness overlapping them."""
+    climbables = with_labels(detections, {SCAFFOLD, LADDER})
+    harnesses = with_labels(detections, {HARNESS})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        close = within_zone(person, climbables, FALL_ZONE_FACTOR, aspect_ratio)
+        if not close or any(overlaps(h.box, person.box) for h in harnesses):
+            continue
+        nearest, distance = close[0]
+        where = "on" if distance == 0 else "near"
+        hazards.append(
+            Hazard.of(
+                "fall_no_harness",
+                f"Person {i + 1} is {where} a {_name(nearest.label)} with no harness seen on them.",
+                (person.box, *(c.box for c, _ in close)),
+                _subject(i),
+            )
+        )
+    return hazards
+
+
+def no_vest_near_vehicle(
+    detections: Sequence[Detection], aspect_ratio: float = 1.0
+) -> list[Hazard]:
+    """Person with a no_vest box within the machinery-zone distance of a vehicle."""
+    vehicles = with_labels(detections, {VEHICLE})
+    no_vests = with_labels(detections, {NO_VEST})
+    hazards = []
+    for i, person in enumerate(with_labels(detections, {PERSON})):
+        bare = [v for v in no_vests if overlaps(v.box, person.box)]
+        close = within_zone(person, vehicles, MACHINERY_ZONE_FACTOR, aspect_ratio)
+        if not bare or not close:
+            continue
+        best = max(v.confidence for v in bare)
+        hazards.append(
+            Hazard.of(
+                "no_vest_near_vehicle",
+                f"Person {i + 1} has no safety vest (no_vest, confidence {best:.2f}) "
+                f"and {_where(person, close[0])}.",
+                (person.box, *(v.box for v in bare), *(c.box for c, _ in close)),
+                _subject(i),
+            )
+        )
+    return hazards
+
+
+def _cords_in_walkway(
+    detections: Sequence[Detection], labels: Collection[str] = (CORD, HOSE)
+) -> list[Detection]:
+    return [c for c in with_labels(detections, labels) if c.box[3] > WALKWAY_TOP_Y]
+
+
+def _describe(found: Sequence[Detection]) -> str:
+    """'a hose', 'chemicals', or '2 objects (chemicals, knife)'."""
+    names = sorted({_name(d.label) for d in found})
+    if len(found) == 1:
+        return names[0] if names[0].endswith("s") else f"a {names[0]}"
+    return f"{len(found)} objects ({', '.join(names)})"
+
+
+def trip_cord(detections: Sequence[Detection]) -> list[Hazard]:
+    """Cord or hose crossing the lower third of the frame, where people walk."""
+    cords = _cords_in_walkway(detections)
+    if not cords:
+        return []
+    return [
+        Hazard.of(
+            "trip_cord",
+            f"Trip risk: {_describe(cords)} in the walkway (lower third of the frame).",
+            tuple(c.box for c in cords),
+        )
+    ]
+
+
+def heat_hazards(detections: Sequence[Detection], context: SceneContext) -> list[Hazard]:
+    """midday_ban, wbgt_stop and heat_welfare_gap (see heat.py)."""
+    workers = count_workers(detections)
+    found = (
+        heat.midday_ban(context.taken_at, context.outdoor),
+        heat.wbgt_stop(context.wbgt_c, workers),
+        heat.heat_welfare_gap(
+            context.outdoor,
+            workers,
+            shade_seen=bool(with_labels(detections, {SHADE_TENT})),
+            water_seen=bool(with_labels(detections, {WATER_COOLER})),
+        ),
+    )
+    return [h for h in found if h is not None]
+
+
+# --- Home rules ------------------------------------------------------------------
+def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
+    """Cord on the floor (lower third of the frame)."""
+    cords = _cords_in_walkway(detections, (CORD,))
+    if not cords:
+        return []
+    return [
+        Hazard.of(
+            "home_trip",
+            f"Trip risk: {_describe(cords)} on the floor (lower third of the frame).",
+            tuple(c.box for c in cords),
+        )
+    ]
+
+
+def home_slip(detections: Sequence[Detection]) -> list[Hazard]:
+    """Wet floor detected."""
+    wet = with_labels(detections, {WET_FLOOR})
+    if not wet:
+        return []
+    best = max(w.confidence for w in wet)
+    return [
+        Hazard.of(
+            "home_slip",
+            f"Slip risk: wet floor detected (confidence {best:.2f}).",
+            tuple(w.box for w in wet),
+        )
+    ]
+
+
+def home_child_reach(detections: Sequence[Detection]) -> list[Hazard]:
+    """Knife or chemicals at low height (centred in the lower half of the frame)."""
+    reachable = with_labels(detections, {KNIFE, CHEMICALS})
+    items = [d for d in reachable if centre_y(d.box) >= CHILD_REACH_MIN_Y]
+    if not items:
+        return []
+    return [
+        Hazard.of(
+            "home_child_reach",
+            f"Within a child's reach: {_describe(items)} in the lower half of the frame.",
+            tuple(d.box for d in items),
+        )
+    ]
+
+
+# --- Entry point -------------------------------------------------------------------
+def evaluate(detections: Sequence[Detection], context: SceneContext | None = None) -> list[Hazard]:
+    """Run every rule for the scene's mode. High-severity hazards come first."""
+    ctx = context if context is not None else SceneContext()
+    dets = confident(detections)
+    if ctx.mode is Mode.HOME:
+        return [*home_trip(dets), *home_slip(dets), *home_child_reach(dets)]
+    ratio = ctx.aspect_ratio
+    hazards = [
+        *no_helmet(dets),
+        *machinery_zone(dets, ratio),
+        *fall_no_harness(dets, ratio),
+        *heat_hazards(dets, ctx),
+        *no_vest_near_vehicle(dets, ratio),
+        *trip_cord(dets),
+    ]
+    return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)
