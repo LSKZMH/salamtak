@@ -47,11 +47,11 @@ def fake_alerts() -> alerts.AlertTable:
 
 
 # ---------- handler ----------
-@pytest.mark.parametrize("name, mode, lang", [
-    ("site_summer_noon.jpg", "Site", "ar"), ("site_winter_morning.jpg", "Site", "en"), ("home_cords_floor.jpg", "Home", "hi"),
-])
-def test_analyze_runs_end_to_end_on_examples(name, mode, lang):
-    score_html, alert_html, annotated, table = app.analyze(Image.open(EXAMPLES / name), "", None, True, lang, mode)
+@pytest.mark.parametrize("row", app.EXAMPLES, ids=lambda row: Path(row[0]).name)
+def test_analyze_runs_end_to_end_on_examples(row):
+    """Each example row exactly as a judge's click passes it (photo, time, WBGT, outdoor, lang, mode)."""
+    path, *inputs = row
+    score_html, alert_html, annotated, table = app.analyze(Image.open(path), *inputs)
     assert "/100" in score_html and max(annotated.size) <= 1280
     assert table and all(len(row) == 3 for row in table)
     assert "<li" in alert_html
@@ -198,6 +198,16 @@ def test_default_app_boot_uses_mock_without_warning():
 def test_ui_builds_and_examples_exist():
     assert isinstance(app.build_ui(), gr.Blocks)
     assert all(Path(row[0]).is_file() for row in app.EXAMPLES)
+
+
+def test_every_real_example_photo_is_credited():
+    """CC BY-SA requires attribution: each example we didn't draw must appear in a CREDITS.md next to it."""
+    synthetic = {"site_summer_noon.jpg", "site_winter_morning.jpg", "home_kitchen.jpg"}  # scripts/make_placeholders.py
+    for row in app.EXAMPLES:
+        photo = Path(row[0])
+        if photo.name not in synthetic:
+            credits = photo.parent / "CREDITS.md"
+            assert credits.is_file() and f"`{photo.name}`" in credits.read_text(encoding="utf-8"), photo.name
 
 
 def test_annotate_draws_high_box_red_and_keeps_input():
