@@ -506,6 +506,21 @@ def hot_work_fire(detections: Sequence[Detection], aspect_ratio: float = 1.0) ->
     ]
 
 
+def no_fire_extinguisher(detections: Sequence[Detection]) -> list[Hazard]:
+    """Welding or fire seen and no fire extinguisher anywhere in the photo."""
+    hot = with_labels(detections, {WELDING, FIRE})
+    if not hot or with_labels(detections, {FIRE_EXTINGUISHER}):
+        return []
+    seen = " and ".join(sorted({_name(d.label) for d in hot}))
+    return [
+        Hazard.of(
+            "no_fire_extinguisher",
+            f"Hot work ({seen}) seen with no fire extinguisher in the photo.",
+            _unique_boxes(hot),
+        )
+    ]
+
+
 # --- Home rules ------------------------------------------------------------------
 def home_trip(detections: Sequence[Detection]) -> list[Hazard]:
     """Cord on the floor (lower third of the frame)."""
@@ -570,5 +585,6 @@ def evaluate(detections: Sequence[Detection], context: SceneContext | None = Non
         *under_suspended_load(dets, ratio),
         *power_line_contact(dets, ratio),
         *hot_work_fire(dets, ratio),
+        *no_fire_extinguisher(dets),
     ]
     return sorted(hazards, key=lambda h: h.severity is not Severity.HIGH)

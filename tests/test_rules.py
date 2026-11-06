@@ -842,3 +842,39 @@ def test_hot_work_once_per_photo_and_names_both_causes():
     assert len(hazards) == 1
     assert len(hazards[0].boxes) == 4
     assert "fire seen" in hazards[0].reason and "welding" in hazards[0].reason
+
+
+# --- no_fire_extinguisher ---------------------------------------------------------------------
+EXTINGUISHER = (0.80, 0.70, 0.85, 0.85)
+
+
+@pytest.mark.parametrize(("label", "named"), [("welding", "welding"), ("fire", "fire")])
+def test_no_extinguisher_flags_hot_work_without_extinguisher(label, named):
+    hazards = rules.no_fire_extinguisher([det(label, WELD)])
+    assert ids(hazards) == ["no_fire_extinguisher"]
+    assert hazards[0].severity is Severity.MEDIUM
+    assert hazards[0].subject is None
+    assert f"Hot work ({named}) seen with no fire extinguisher" in hazards[0].reason
+
+
+@pytest.mark.parametrize("label", ["welding", "fire"])
+def test_no_extinguisher_clear_when_extinguisher_anywhere(label):
+    assert rules.no_fire_extinguisher([det(label, WELD), det("fire_extinguisher", EXTINGUISHER)]) == []
+
+
+def test_no_extinguisher_clear_without_hot_work():
+    assert rules.no_fire_extinguisher([det("gas_cylinder", CYLINDER), person()]) == []
+
+
+def test_no_extinguisher_once_per_photo():
+    scene = [det("welding", WELD), det("welding", (0.10, 0.10, 0.20, 0.20)), det("fire", FIRE)]
+    hazards = rules.no_fire_extinguisher(scene)
+    assert len(hazards) == 1
+    assert len(hazards[0].boxes) == 3
+    assert "Hot work (fire and welding)" in hazards[0].reason
+
+
+def test_fire_alone_costs_a_high_and_a_medium():
+    found = rules.evaluate([det("fire", FIRE, 0.6, )], INDOOR)
+    assert ids(found) == ["hot_work_fire", "no_fire_extinguisher"]
+    assert safety_score(found) == 65
