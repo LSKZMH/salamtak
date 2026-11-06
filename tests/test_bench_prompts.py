@@ -93,6 +93,13 @@ def test_sweep_picks_safest_shipping_threshold() -> None:
     assert best.threshold == 0.50  # highest (safest) threshold with the same rates
 
 
+def test_among_shipping_points_lower_false_positives_wins_over_more_hits() -> None:
+    def point(hit: float, fp: float) -> object:
+        return bench.OperatingPoint("rebar", ("a",), 0.3, hit, fp, fp, 10, 100, 50)
+
+    assert bench.best_point([point(0.69, 0.03), point(0.62, 0.0)]).fp_rate == 0.0
+
+
 def test_label_with_no_positives_never_ships() -> None:
     scores = {k: {"rebar": 0.0} for k in TRUTH}
     point = bench.operating_point("rebar", ("rebar",), 0.3, scores, TRUTH)
@@ -107,7 +114,8 @@ def test_report_lists_shipped_label_in_cutoffs_table() -> None:
     assert "### `fire` — **shipped**" in text
     assert "| `fire` | 'fire' | 0.55 |" in text
     assert "### `rebar` — not benched (no positive photos)" in text  # TRUTH has no rebar photos
-    assert "### `harness` — already shipped; FP rate" in text  # existing prompts are re-checks
+    # existing prompts are re-checked at the cut-off rules.py really uses (default 0.25)
+    assert "### `harness` — already shipped; at its deployed cut-off 0.25: FP rate 0.00" in text
 
 
 def test_report_marks_benched_label_that_fails_as_not_shipped() -> None:

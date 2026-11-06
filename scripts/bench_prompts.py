@@ -39,17 +39,20 @@ from safesite import openvocab  # noqa: E402
 from safesite.types import normalize_label  # noqa: E402
 
 # label -> phrasings to try (from chat-9-detect-app-v2.md)
+# Round 1 = the brief's phrasings; round 2 (after "+") added where round 1 came close or failed.
 NEW_PHRASINGS: Mapping[str, tuple[str, ...]] = {
-    "power_line": ("power lines", "overhead power cable", "electric wires"),
-    "utility_pole": ("electricity pole", "utility pole"),
-    "crane_hook": ("crane hook", "load hanging from a crane", "suspended load"),
+    "power_line": ("power lines", "overhead power cable", "electric wires",
+                   "power line", "overhead wires"),
+    "utility_pole": ("electricity pole", "utility pole", "power pole", "wooden pole"),
+    "crane_hook": ("crane hook", "load hanging from a crane", "suspended load", "hook block", "lifting hook"),
     "welding": ("welding sparks", "person welding"),
-    "fire": ("fire", "flames"),
-    "gas_cylinder": ("gas cylinder", "oxygen and acetylene cylinders"),
-    "fire_extinguisher": ("fire extinguisher",),
+    "fire": ("fire", "flames", "open flame", "burning fire"),
+    "gas_cylinder": ("gas cylinder", "oxygen and acetylene cylinders", "gas bottle",
+                     "compressed gas cylinders"),
+    "fire_extinguisher": ("fire extinguisher", "red fire extinguisher", "extinguisher"),
     "rebar": ("exposed rebar", "steel reinforcement bars sticking up"),
     "floor_opening": ("hole in the floor", "floor opening"),
-    "trench": ("open trench", "excavation pit"),
+    "trench": ("open trench", "excavation pit", "trench", "deep trench in the ground"),
 }
 # Prompts already shipped in SITE_PROMPTS that we re-check for false alarms.
 EXISTING_PHRASINGS: Mapping[str, tuple[str, ...]] = {
@@ -172,10 +175,21 @@ def candidates(phrasings: Sequence[str]) -> list[tuple[str, ...]]:
 
 
 def best_point(points: Sequence[OperatingPoint]) -> OperatingPoint:
-    """Shipping points beat non-shipping ones; then higher hit rate (minus FP when not
-    shipping), lower FP, fewer phrasings (cheaper), higher threshold (safer)."""
-    return max(points, key=lambda p: (p.ships, p.hit_rate - (0 if p.ships else p.fp_rate),
-                                      -p.fp_rate, -len(p.phrasings), p.threshold))
+    """Shipping points beat non-shipping ones. Among shipping points a false alarm in the demo
+    costs more than a miss: lowest FP first, then hit rate. Non-shipping points rank by
+    hit rate minus FP. Ties: fewer phrasings (cheaper), then higher threshold (safer)."""
+    def key(p: OperatingPoint) -> tuple:
+        merit = (-p.fp_rate, p.hit_rate) if p.ships else (p.hit_rate - p.fp_rate, -p.fp_rate)
+        return (p.ships, *merit, -len(p.phrasings), p.threshold)
+
+    return max(points, key=key)
+
+
+def deployed_cutoff(label: str) -> float:
+    """The cut-off rules.py applies to a YOLOE label today."""
+    from safesite import rules
+
+    return rules.OPEN_VOCAB_CUTOFFS.get(label, rules.OPEN_VOCAB_MIN_CONFIDENCE)
 
 
 def sweep(label: str, phrasings: Sequence[str], scores: Scores,
@@ -190,8 +204,9 @@ def sweep(label: str, phrasings: Sequence[str], scores: Scores,
 # ---------- report ----------
 
 def _verdict(best: OperatingPoint, existing: bool) -> str:
-    if existing:  # already in SITE_PROMPTS: this is a false-alarm re-check, not a ship decision
-        return f"already shipped; FP rate {best.fp_rate:.2f} at {best.threshold:.2f}"
+    if existing:  # already in SITE_PROMPTS: a false-alarm re-check at the deployed cut-off
+        return (f"already shipped; at its deployed cut-off {best.threshold:.2f}: FP rate "
+                f"{best.fp_rate:.2f}, FP neg {best.fp_rate_neg:.2f}")
     if best.n_pos == 0:
         return "not benched (no positive photos)"
     return "**shipped**" if best.ships else "not shipped"
@@ -228,7 +243,11 @@ def report(scores: Scores, truth: Mapping[str, frozenset[str]], weights: str, im
                                    ("Existing prompts (false-alarm re-check)", EXISTING_PHRASINGS, True)):
         lines += [f"## {title}", ""]
         for label, phrasings in table.items():
-            points = sweep(label, phrasings, scores, truth)
+            if existing:  # measure at the cut-off actually used, not the best one
+                cut = deployed_cutoff(label)
+                points = {c: operating_point(label, c, cut, scores, truth) for c in candidates(phrasings)}
+            else:
+                points = sweep(label, phrasings, scores, truth)
             best = best_point(list(points.values()))
             if best.ships and not existing:
                 shipped[label] = best
