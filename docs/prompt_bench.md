@@ -163,7 +163,9 @@ Caveat: small sets (9–29 positives per label), and phrasings were picked on th
 |---|---|---|---|---|---|---|---|
 | ladder | 0.25 | 0.00 | 0.00 | 0.00 | 0.00 | 0 / 184 | no |
 
-## Recommended `OPEN_VOCAB_CUTOFFS` (for Chat 8's `rules.py`)
+## Sweep pick (all prompts loaded at once)
+
+Final cut-offs come from the production check below, which runs only the shipped prompts.
 
 | label | prompts | cut-off | hit rate | FP rate |
 |---|---|---|---|---|
@@ -171,14 +173,14 @@ Caveat: small sets (9–29 positives per label), and phrasings were picked on th
 | `rebar` | 'exposed rebar', 'steel reinforcement bars sticking up' | 0.20 | 0.62 | 0.03 |
 ## Production check (shipped Site prompt set, app's `OpenVocabDetector`)
 
-Scores move a little when the prompt set changes, so the shipped set is re-run as the app runs it. *Deployed* = the cut-off `rules.py` applies today.
+Scores move a little when the prompt set changes, so the shipped set is re-run as the app runs it. *Deployed* = the cut-off `rules.py` applies today; *recommended* = the final value for `rules.OPEN_VOCAB_CUTOFFS`.
 
 | label | deployed cut-off | hit | FP | FP site | recommended cut-off | hit | FP | FP site |
 |---|---|---|---|---|---|---|---|---|
-| `utility_pole` | 0.25 | 0.75 | 0.02 | 0.00 | 0.20 | 0.75 | 0.04 | 0.04 |
+| `utility_pole` | 0.25 | 0.75 | 0.02 | 0.00 | 0.25 | 0.75 | 0.02 | 0.00 |
 | `rebar` | 0.25 | 0.69 | 0.02 | 0.00 | 0.20 | 0.77 | 0.04 | 0.00 |
 | `harness` | 0.25 | 0.00 | 0.00 | 0.00 | 0.25 | 0.00 | 0.00 | 0.00 |
 | `scaffold` | 0.25 | 0.75 | 0.03 | 0.00 | 0.25 | 0.75 | 0.03 | 0.00 |
 | `ladder` | 0.25 | 0.00 | 0.00 | 0.00 | 0.25 | 0.00 | 0.00 | 0.00 |
 
-Recommended cut-offs for `utility_pole`, `rebar` are not yet in `rules.OPEN_VOCAB_CUTOFFS` (Chat 8 copies them).
+Recommended cut-offs for `rebar` are not yet in `rules.OPEN_VOCAB_CUTOFFS` (Chat 8 copies them).

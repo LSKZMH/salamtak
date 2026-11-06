@@ -277,7 +277,8 @@ def report(scores: Scores, truth: Mapping[str, frozenset[str]], weights: str, im
             if best.ships and not existing and label not in HELD_BACK:
                 shipped[label] = best
             lines += _table(label, points, best, existing)
-    lines += ["## Recommended `OPEN_VOCAB_CUTOFFS` (for Chat 8's `rules.py`)", "",
+    lines += ["## Sweep pick (all prompts loaded at once)", "",
+              "Final cut-offs come from the production check below, which runs only the shipped prompts.", "",
               "| label | prompts | cut-off | hit rate | FP rate |", "|---|---|---|---|---|"]
     for label, p in shipped.items():
         lines.append(f"| `{label}` | {', '.join(repr(x) for x in p.phrasings)} | {p.threshold:.2f} | "
@@ -287,8 +288,11 @@ def report(scores: Scores, truth: Mapping[str, frozenset[str]], weights: str, im
     return "\n".join(lines + [""])
 
 
-# What we recommend for rules.OPEN_VOCAB_CUTOFFS (from the sweep above, prompts as shipped).
-RECOMMENDED_CUTOFFS: Mapping[str, float] = {"utility_pole": 0.20, "rebar": 0.20}
+# Final recommendation for rules.OPEN_VOCAB_CUTOFFS, read off the production check (the shipped
+# prompt set as the app runs it), which supersedes the all-prompts sweep pick:
+# utility_pole: 0.25 gives the same hit rate as 0.20 with fewer false alarms (= the default);
+# rebar: 0.20 adds ~0.08 hit rate for ~0.02 FP and still no false alarms on site photos.
+RECOMMENDED_CUTOFFS: Mapping[str, float] = {"utility_pole": 0.25, "rebar": 0.20}
 
 
 def production_scores(bench: Path, images: Sequence[str], weights: str) -> dict[str, dict[str, float]]:
@@ -320,7 +324,8 @@ def production_section(scores: Scores, truth: Mapping[str, frozenset[str]]) -> l
         raise ValueError(f"{len(missing)} bench images have no production score; re-run with --production")
     lines = ["## Production check (shipped Site prompt set, app's `OpenVocabDetector`)", "",
              "Scores move a little when the prompt set changes, so the shipped set is re-run as the "
-             "app runs it. *Deployed* = the cut-off `rules.py` applies today.", "",
+             "app runs it. *Deployed* = the cut-off `rules.py` applies today; *recommended* = the final "
+             "value for `rules.OPEN_VOCAB_CUTOFFS`.", "",
              "| label | deployed cut-off | hit | FP | FP site | recommended cut-off | hit | FP | FP site |",
              "|---|---|---|---|---|---|---|---|---|"]
     for label in [*RECOMMENDED_CUTOFFS, *EXISTING_PHRASINGS]:
