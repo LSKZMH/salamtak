@@ -6,12 +6,12 @@ Status: **in progress** (Chat 10). "Before" numbers are in; the v1 + new rules a
 
 | Metric | Before (v1, old rules) | v1 + new rules | v2 + new rules |
 |---|---|---|---|
-| Qatar set: catch rate | **25%** (2/8) · 33% (2/6) on the original v1 hazard ids | | |
-| Qatar set: false alarms per photo | **0.00** (0 on 6 clean photos) | | |
+| Qatar set: catch rate | **25%** (2/8) · 33% (2/6) on the original v1 hazard ids | **25%** (2/8), live Space | |
+| Qatar set: false alarms per photo | **0.00** (0 on 6 clean photos) | **0.00**, live Space | |
 | ConstructionSite subset: catch rate per rule | no_helmet **29%** (46/156) · machinery_zone **9%** (2/23) · fall_no_harness **0%** (0/23) | same (identical predictions on all 490 photos) | |
 | ConstructionSite subset: false-alarm rate per rule | no_helmet 12% (40/334) · machinery_zone 1% (4/467) · fall_no_harness 1% (7/467) | same | |
-| CPU seconds per photo (Space, server-side) | **0.10 mean · 0.09 median · 0.18 max** | | |
-| End-to-end round trip from Doha (upload + queue + result) | 8.5 s median (7.8–13.0 s) | | |
+| CPU seconds per photo (Space, server-side) | **0.10 mean · 0.09 median · 0.18 max** | **0.09 mean · 0.08 median · 0.10 max** | |
+| End-to-end round trip from Doha (upload + queue + result) | 8.5 s median (7.8–13.0 s) | 5.9 s median (4.8–7.1 s) | |
 
 Gate 3 criterion 4 (≤ 3.0 s per photo in the Space): **pass** on v1 (0.18 s worst case).
 
@@ -92,4 +92,4 @@ _To fill in from `metrics.json`._ v1 on its own val split: mAP50 0.549 (helmet 0
 
 ## Credits
 
-From `COSTS.md`: **$2.01** so far (Jobs $1.44 + Space ≈ $0.57). _Final total at the end of the night._
+From `COSTS.md`: **$2.20** so far (Jobs $1.63 + Space ≈ $0.57). _Final total at the end of the night._
