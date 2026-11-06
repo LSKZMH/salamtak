@@ -86,7 +86,10 @@ class Detection:
     label: str
     confidence: float
     box: Box
-    source: str = "detector"  # "detector" (YOLO26) | "yoloe" | "mock"; not used by the rules
+    # "detector" (YOLO26) | "yoloe" | "mock". rules.confidence_cutoff reads it: "yoloe" gets the
+    # open-vocab cut-off, "detector" + a trained class gets MIN_CONFIDENCE, anything else by label.
+    # Tag YOLOE detections source="yoloe", or harness/scaffold below 0.35 are dropped.
+    source: str = "detector"
 
     def __post_init__(self) -> None:
         label = normalize_label(self.label)
