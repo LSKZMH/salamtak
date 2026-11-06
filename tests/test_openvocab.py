@@ -21,12 +21,20 @@ from safesite.types import Detection
 def test_site_prompts_cover_the_requested_objects():
     assert set(SITE_PROMPTS) == {
         "safety harness", "scaffolding", "ladder", "shade tent",
-        "water cooler", "extension cord", "hose",
+        "water cooler", "extension cord", "cable on the floor", "hose",
     }
 
 
 def test_home_prompts_cover_the_requested_objects():
-    assert set(HOME_PROMPTS) == {"extension cord", "wet floor", "knife", "cleaning chemicals"}
+    assert set(HOME_PROMPTS) == {
+        "extension cord", "cable on the floor", "wet floor", "knife", "cleaning chemicals",
+    }
+
+
+@pytest.mark.parametrize("prompts", [SITE_PROMPTS, HOME_PROMPTS], ids=["site", "home"])
+def test_cable_on_the_floor_counts_as_a_cord(prompts):
+    # "extension cord" alone missed every real cord photo we tried; this wording finds them.
+    assert prompts["cable on the floor"] == prompts["extension cord"] == "cord"
 
 
 def test_every_prompt_maps_to_a_label_rules_py_understands():

@@ -43,10 +43,12 @@ SITE_PROMPTS: Mapping[str, str] = {
     "shade tent": "shade_tent",
     "water cooler": "water_cooler",
     "extension cord": "cord",
+    "cable on the floor": "cord",  # finds real floor cords that "extension cord" misses
     "hose": "hose",
 }
 HOME_PROMPTS: Mapping[str, str] = {
     "extension cord": "cord",
+    "cable on the floor": "cord",
     "wet floor": "wet_floor",
     "knife": "knife",
     "cleaning chemicals": "chemicals",
