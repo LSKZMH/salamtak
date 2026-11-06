@@ -8,6 +8,7 @@ Every hazard carries a one-line plain-English ``reason`` naming what was seen.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Collection, Sequence
 
 from safesite import heat
@@ -39,6 +40,7 @@ OPEN_VOCAB_LABELS = frozenset(
     | CHILD_REACH_LABELS
 )
 DISPLAY_NAME = {MACHINERY: "machine", NO_HELMET: "bare head", WET_FLOOR: "wet floor"}
+IRREGULAR_PLURALS = {"knife": "knives"}  # display name -> plural, for reason strings
 
 
 # --- Geometry and filtering helpers -------------------------------------------
@@ -247,12 +249,22 @@ def _cords_in_walkway(
     return [c for c in with_labels(detections, labels) if c.box[3] > WALKWAY_TOP_Y]
 
 
+def _count_phrase(name: str, count: int) -> str:
+    """'a hose', 'an extension cord', 'chemicals', '4 cords', '2 knives'."""
+    if name.endswith("s"):  # already plural, e.g. "chemicals"
+        return name if count == 1 else f"{count} {name}"
+    if count == 1:
+        return f"{'an' if name[0] in 'aeiou' else 'a'} {name}"
+    return f"{count} {IRREGULAR_PLURALS.get(name, name + 's')}"
+
+
 def _describe(found: Sequence[Detection]) -> str:
-    """'a hose', 'chemicals', or '2 objects (chemicals, knife)'."""
-    names = sorted({_name(d.label) for d in found})
-    if len(found) == 1:
-        return names[0] if names[0].endswith("s") else f"a {names[0]}"
-    return f"{len(found)} objects ({', '.join(names)})"
+    """'4 cords', 'a knife and chemicals', '2 cords, a hose and an extension cord'."""
+    counts = Counter(_name(d.label) for d in found)
+    parts = [_count_phrase(name, n) for name, n in sorted(counts.items())]
+    if len(parts) == 1:
+        return parts[0]
+    return f"{', '.join(parts[:-1])} and {parts[-1]}"
 
 
 def trip_cord(detections: Sequence[Detection]) -> list[Hazard]:

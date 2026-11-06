@@ -345,6 +345,29 @@ def test_home_child_reach_clear_when_item_is_high():
     assert rules.evaluate([det("knife", (0.40, 0.10, 0.50, 0.20))], HOME) == []
 
 
+# --- reason wording for several objects --------------------------------------------
+def _floor(label: str, x: float) -> Detection:
+    return det(label, (x, 0.80, x + 0.1, 0.90))
+
+
+def test_reason_counts_several_cords_by_name():
+    hazards = rules.home_trip([_floor("cord", 0.05 + 0.2 * i) for i in range(4)])
+    assert hazards[0].reason == "Trip risk: 4 cords on the floor (lower third of the frame)."
+
+
+def test_reason_lists_mixed_objects_with_articles():
+    hazards = rules.trip_cord([_floor("cord", 0.05), _floor("cord", 0.3), _floor("hose", 0.55)])
+    assert "2 cords and a hose in the walkway" in hazards[0].reason
+
+
+def test_reason_uses_an_and_irregular_plurals():
+    reach = rules.home_child_reach(
+        [_floor("knife", 0.1), _floor("knife", 0.4), _floor("chemicals", 0.7)]
+    )
+    assert "chemicals and 2 knives" in reach[0].reason
+    assert "an extension cord" in rules.home_trip([_floor("extension cord", 0.1)])[0].reason
+
+
 def test_home_mode_skips_site_and_heat_rules():
     ctx = SceneContext(taken_at=datetime(2026, 7, 15, 12, 0), wbgt_c=40, mode=Mode.HOME)
     assert rules.evaluate([person(), det("no_helmet", HEAD)], ctx) == []
