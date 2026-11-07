@@ -1,7 +1,8 @@
-"""Plain verdict for the report: Safe or Unsafe, plus what to do. No score number is shown.
+"""Plain verdict for the report: Safe, Needs attention or Unsafe, plus what to do. No score is shown.
 
-Any hazard makes the photo Unsafe. The card colour keeps the severity: red if any hazard is High,
-orange if all are Medium, green if none. Used by the Photo tab (app.py) and the Live tab (live.py).
+Unsafe if any hazard is High, Needs attention if all hazards are Medium, Safe if none. Every
+non-safe verdict tells the worker to report to their supervisor. Used by the Photo tab (app.py)
+and the Live tab (live.py).
 """
 from __future__ import annotations
 
@@ -10,9 +11,9 @@ from dataclasses import dataclass
 
 from safesite.types import Hazard
 
-SAFE, UNSAFE = "Safe", "Unsafe"
-SITE_STOP = "Stop work and alert the site safety officer now."
-SITE_REPORT = "Alert the site safety officer."
+SAFE, NEEDS_ATTENTION, UNSAFE = "Safe", "Needs attention", "Unsafe"
+SITE_STOP = "Stop work and report to your supervisor now."
+SITE_REPORT = "Report to your supervisor."
 HOME_STOP = "Fix this now before someone gets hurt."
 HOME_REPORT = "Fix this soon."
 
@@ -20,7 +21,7 @@ HOME_REPORT = "Fix this soon."
 @dataclass(frozen=True)
 class Verdict:
     css: str  # good | warn | bad: card colour
-    word: str  # Safe | Unsafe
+    word: str  # Safe | Needs attention | Unsafe
     action: str  # what to do next; "" when safe
 
 
@@ -30,5 +31,5 @@ def verdict(hazards: Sequence[Hazard], mode: str = "site") -> Verdict:
     if any(h.severity == "High" for h in hazards):
         return Verdict("bad", UNSAFE, HOME_STOP if home else SITE_STOP)
     if hazards:
-        return Verdict("warn", UNSAFE, HOME_REPORT if home else SITE_REPORT)
+        return Verdict("warn", NEEDS_ATTENTION, HOME_REPORT if home else SITE_REPORT)
     return Verdict("good", SAFE, "")

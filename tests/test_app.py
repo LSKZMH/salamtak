@@ -52,7 +52,7 @@ def test_analyze_runs_end_to_end_on_examples(row):
     """Each example row exactly as a judge's click passes it (photo, time, WBGT, outdoor, lang, mode)."""
     path, *inputs = row
     score_html, alert_html, annotated, table = app.analyze(Image.open(path), *inputs)
-    assert ("Unsafe" in score_html or "Safe" in score_html) and "/100" not in score_html
+    assert any(w in score_html for w in ("Unsafe", "Needs attention", "Safe")) and "/100" not in score_html
     assert max(annotated.size) <= 1280
     assert table and all(len(row) == 3 for row in table)
     assert "<li" in alert_html
@@ -60,7 +60,7 @@ def test_analyze_runs_end_to_end_on_examples(row):
 
 def test_summer_noon_example_reads_exif_and_floors_score(tmp_path):
     score_html, *_ = app.analyze(Image.open(EXAMPLES / "site_summer_noon.jpg"), "", 33.5, True, "en", "Site")
-    assert "Unsafe" in score_html and "safety officer" in score_html
+    assert "Unsafe" in score_html and "report to your supervisor" in score_html
     assert "photo EXIF" in score_html and "2026-07-15 12:30" in score_html
 
 
@@ -155,8 +155,8 @@ def _hazard(hazard_id: str) -> Hazard:
 
 @pytest.mark.parametrize("hazards, css, word, action", [
     ((), "good", "Safe", ""),
-    ((_hazard("trip_cord"),), "warn", "Unsafe", "Alert the site safety officer."),
-    ((_hazard("no_helmet"), _hazard("trip_cord")), "bad", "Unsafe", "Stop work and alert the site safety officer"),
+    ((_hazard("trip_cord"),), "warn", "Needs attention", "Report to your supervisor."),
+    ((_hazard("no_helmet"), _hazard("trip_cord")), "bad", "Unsafe", "Stop work and report to your supervisor now."),
 ])
 def test_score_card_shows_verdict_and_action_not_a_number(hazards, css, word, action):
     out = app._score_html(_analysis(50, hazards=hazards), SUMMER_NOON, "photo EXIF", 0.1)
@@ -167,7 +167,7 @@ def test_score_card_shows_verdict_and_action_not_a_number(hazards, css, word, ac
 
 def test_home_mode_action_does_not_mention_a_site_officer():
     out = app._score_html(_analysis(90, hazards=(_hazard("trip_cord"),)), SUMMER_NOON, "x", 0.1, "home")
-    assert "Fix this soon." in out and "safety officer" not in out
+    assert "Fix this soon." in out and "supervisor" not in out
 
 
 def test_unassessed_photo_never_shows_a_verdict():

@@ -1,6 +1,6 @@
 """Salamtak سلامتك — Gradio Space entry point.
 
-Photo -> detector -> rules engine -> score + annotated image + alerts. No LLM anywhere.
+Photo -> detector -> rules engine -> verdict + annotated image + alerts. No LLM anywhere.
 All scoring goes through safesite.pipeline.analyze_image; scripts/evaluate.py should call it too
 so the pitch numbers measure exactly this app (it currently calls rules directly).
 """
@@ -140,7 +140,7 @@ HEADER_HTML = (
     "<header class='ss-header'>"
     "<div class='ss-header-body'>"
     "<h1 class='ss-brand' style='margin:0'>Salamtak<span lang='ar' dir='rtl'>سلامتك</span></h1>"
-    "<p class='ss-tagline' style='margin:0'>One photo of a site → hazards, a Safe / Unsafe verdict and short alerts "
+    "<p class='ss-tagline' style='margin:0'>One photo of a site → hazards, a Safe / Needs attention / Unsafe verdict and short alerts "
     "in workers' languages. Built for Qatar: midday summer work ban and WBGT stop-work rule.</p></div>"
     "<div class='ss-badges' aria-label='About this tool'>"
     "<span class='ss-badge'>Computer vision</span><span class='ss-badge'>Rules engine</span>"

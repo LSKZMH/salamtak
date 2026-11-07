@@ -120,7 +120,9 @@ def test_handler_survives_a_detector_crash():
 def test_status_shows_unsafe_and_safety_officer_action_without_a_number():
     hazard = Hazard(id="no_helmet", severity=Severity.HIGH, reason="seen")
     out = live.status_html(75, (hazard,), "Mock", 0.1, "")
-    assert "Live · Unsafe" in out and "alert the site safety officer" in out and "/100" not in out
+    assert "Live · Unsafe" in out and "report to your supervisor" in out and "/100" not in out
+    medium = Hazard(id="trip_cord", severity=Severity.MEDIUM, reason="seen")
+    assert "Live · Needs attention" in live.status_html(90, (medium,), "Mock", 0.1, "")
     assert "Live · Safe" in live.status_html(100, (), "Mock", 0.1, "")
 
 

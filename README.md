@@ -9,7 +9,7 @@ python_version: "3.11"
 app_file: app.py
 pinned: false
 license: agpl-3.0
-short_description: Site photo to hazards, safety score and worker alerts
+short_description: Site photo to hazards, safe/unsafe verdict, worker alerts
 tags:
   - qai-hf-hackathon-2026
   - object-detection
@@ -22,7 +22,7 @@ models:
 
 # 🦺 Salamtak سلامتك
 
-One photo of a construction site → detected hazards, a 0–100 safety score, and short alerts in workers' languages
+One photo of a construction site → detected hazards, a **Safe / Needs attention / Unsafe** verdict, and short alerts in workers' languages
 (English, Arabic, Hindi, Bengali, Nepali, Urdu, Malayalam). Built for the Qai × Hugging Face Hackathon, Doha, Nov 2026.
 
 **No LLM anywhere in the pipeline.** A fine-tuned YOLO26 detector and the open-vocabulary YOLOE-26 (text prompts,
@@ -35,7 +35,8 @@ no training) find objects; a plain-Python rules engine decides what is a hazard,
   [Francesco/construction-safety-gsnvb](https://huggingface.co/datasets/Francesco/construction-safety-gsnvb)
   (merged into our private `plitip/team-qh-091-safesite-data`)
 - Team: QH-091
-- Score: `max(0, 100 − 25·High − 10·Medium)`
+- Verdict: **Unsafe** if any hazard is High ("Stop work and report to your supervisor now"), **Needs attention**
+  if all are Medium ("Report to your supervisor"), **Safe** if none.
 - Runs on CPU, about 1 s per photo.
 
 ## What it checks (Site mode)
@@ -58,7 +59,7 @@ Home mode checks cords on the floor, wet floors, and knives / chemicals within a
 
 YOLOE prompts ship only if they pass our image-level bench (hit rate ≥ 0.6, false alarms ≤ 10 %, also on
 plain site photos): see [docs/prompt_bench.md](docs/prompt_bench.md). Rules whose objects no shipped model can see
-yet (suspended loads, fire / hot work, missing extinguisher, open trenches) are listed under the score as
+yet (suspended loads, fire / hot work, missing extinguisher, open trenches) are listed under the verdict as
 **not checked**, so a photo never looks safer than we can tell.
 
 ## Configuration (Space variables)
