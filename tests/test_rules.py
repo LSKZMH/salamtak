@@ -86,6 +86,38 @@ def test_no_helmet_counts_once_per_person_with_two_bare_head_boxes():
     assert len(hazards[0].boxes) == 3
 
 
+# "No helmet seen" (absence) needs a confident person fully inside the frame;
+# an explicit bare-head box always counts.
+EDGE_PERSON = (0.0, 0.30, 0.10, 0.70)
+
+
+@pytest.mark.parametrize(("conf", "flagged"), [(0.49, False), (0.50, True)])
+def test_no_helmet_absence_needs_a_confident_person(conf, flagged):
+    assert bool(rules.no_helmet([det("person", PERSON, conf)])) is flagged
+
+
+@pytest.mark.parametrize(
+    "box", [EDGE_PERSON, (0.40, 0.30, 0.50, 0.995)], ids=["left-edge", "bottom-margin"]
+)
+def test_no_helmet_absence_skips_people_cut_off_by_the_border(box):
+    assert rules.no_helmet([person(box)]) == []
+
+
+def test_no_helmet_bare_head_box_counts_for_unsure_person():
+    scene = [det("person", PERSON, 0.40), det("no_helmet", HEAD)]
+    assert ids(rules.no_helmet(scene)) == ["no_helmet"]
+
+
+def test_no_helmet_bare_head_box_counts_for_border_person():
+    scene = [person(EDGE_PERSON), det("no_helmet", (0.02, 0.29, 0.08, 0.36))]
+    assert ids(rules.no_helmet(scene)) == ["no_helmet"]
+
+
+def test_no_helmet_absence_still_flags_confident_interior_person():
+    hazards = rules.no_helmet([det("person", PERSON, 0.80)])
+    assert "no helmet seen" in hazards[0].reason
+
+
 # --- machinery_zone ----------------------------------------------------------------
 def test_machinery_zone_flags_person_overlapping_machine():
     hazards = rules.machinery_zone([person(), det("machinery", (0.45, 0.50, 0.80, 0.90))])
