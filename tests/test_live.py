@@ -126,6 +126,29 @@ def test_status_shows_unsafe_and_safety_officer_action_without_a_number():
     assert "Live · Safe" in live.status_html(100, (), "Mock", 0.1, "")
 
 
+def test_demo_clip_is_short_cctv_sized_and_credited():
+    frames = list(live.clip_frames(live.DEMO_CLIP))
+    assert 30 <= len(frames) <= 20 * live.DEMO_FPS  # a short demo, not a long video
+    assert frames[0].shape == (540, 960, 3)
+    credits = (live.DEMO_CLIP.parent / "CREDITS.md").read_text(encoding="utf-8")
+    assert f"`{live.DEMO_CLIP.name}`" in credits and "CC BY-SA 4.0" in credits
+
+
+def test_demo_player_yields_a_verdict_for_every_frame_in_real_time():
+    waits: list[float] = []
+    play = live.make_demo_player(detect.MockDetector(), _no_alerts, sleep=waits.append)
+    out = list(play("en"))
+    assert len(out) == len(list(live.clip_frames(live.DEMO_CLIP))) == len(waits)
+    assert all(img is not None for img, _ in out)
+    assert "Live · Unsafe" in out[-1][1]  # mock site: a person without a helmet
+    assert all(0 <= w <= 1 / live.DEMO_FPS for w in waits)
+
+
+def test_demo_player_reports_a_missing_clip(tmp_path):
+    play = live.make_demo_player(detect.MockDetector(), _no_alerts, clip=tmp_path / "missing.mp4")
+    assert "not found" in list(play("en"))[0][1]
+
+
 def test_status_escapes_hazard_text():
     hazard = Hazard(id="no_helmet", severity=Severity.HIGH, reason="<script>x</script>")
     html_out = live.status_html(100, (hazard,), "Mock", 0.1, "<p>a</p>")

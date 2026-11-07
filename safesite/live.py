@@ -9,9 +9,10 @@ from __future__ import annotations
 import html
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import gradio as gr
@@ -26,6 +27,12 @@ from safesite.verdict import verdict
 
 log = logging.getLogger(__name__)
 
+# Demo site camera: an 11 s CCTV-style clip (CC BY-SA 4.0, credited in examples/demo_video/CREDITS.md),
+# analysed frame by frame like a live feed. The rules use the time burnt into its overlay.
+DEMO_CLIP = Path(__file__).resolve().parent.parent / "examples" / "demo_video" / "site_cam_03.mp4"
+DEMO_CLIP_START = datetime(2026, 11, 5, 8, 0, 0)
+DEMO_FPS = 5  # the clip's frame rate; every frame is analysed and played back in real time
+LIVE_CONCURRENCY_ID = "live-detector"  # webcam and demo share one model copy, so one runs at a time
 LIVE_INTERVAL_S = 1.0  # one frame per second; the trained YOLO26s takes ~0.2 s per frame on the Space CPU
 LIVE_TIME_LIMIT_S = 180  # each viewer's stream stops after 3 min so one open tab can't hog the shared CPU
 LIVE_CONCURRENCY = 1  # live frames analysed at once (the Live tab has its own model copy)
@@ -148,6 +155,66 @@ def make_handler(detector: Any, alerts_html: AlertsHtml) -> Callable[..., tuple[
     return handle
 
 
+# ---------- demo site camera ----------
+def clip_frames(path: Path) -> Iterator[np.ndarray]:
+    """RGB frames of a video file, in order."""
+    import cv2  # deferred: only the demo player needs it (installed with ultralytics)
+
+    cap = cv2.VideoCapture(str(path))
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                return
+            yield cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    finally:
+        cap.release()
+
+
+def make_demo_player(detector: Any, alerts_html: AlertsHtml, clip: Path = DEMO_CLIP, fps: float = DEMO_FPS,
+                     sleep: Callable[[float], None] = time.sleep) -> Callable[[str], Iterator[tuple[Any, str]]]:
+    """Gradio generator: plays the demo clip through the detector + rules, yielding (annotated, status)."""
+    name = str(getattr(detector, "name", "detector"))
+    context = SceneContext(taken_at=DEMO_CLIP_START, outdoor=True, wbgt_c=None, mode="site")
+
+    def play(lang: str) -> Iterator[tuple[Any, str]]:
+        if not clip.is_file():
+            yield None, "<p role='status'>Demo clip not found.</p>"
+            return
+        history: History = ()
+        for frame in clip_frames(clip):
+            started = time.perf_counter()
+            try:
+                result = analyze_frame(detector, frame, context, history)
+            except Exception:  # one bad frame must not end the demo
+                log.exception("demo frame failed")
+                continue
+            history, secs = result.history, time.perf_counter() - started
+            note = "" if result.analysis.assessed else "no people or equipment in view"
+            alerts = alerts_html(result.shown, lang) if result.shown else ""
+            yield result.annotated, status_html(result.score, result.shown, name, secs, alerts, note)
+            sleep(max(0.0, 1.0 / fps - (time.perf_counter() - started)))
+
+    return play
+
+
+def build_demo_camera(detector: Any, lang: Any, alerts_html: AlertsHtml) -> None:
+    """'Play demo site camera' button, its feed and status, inside the Live tab."""
+    gr.Markdown("### Demo site camera\nNo webcam? Play an 11-second clip from a site camera. Every frame is "
+                "checked live by the same detector and rules.")
+    with gr.Row():
+        with gr.Column(scale=1):
+            play_btn = gr.Button("▶ Play demo site camera", variant="primary", elem_classes="ss-run")
+            gr.Markdown("<small>Clip: *Building construction Excavator Moira Close Broadwater Farm Haringey 2025 01*"
+                        " by Acabashi, CC BY-SA 4.0, via Wikimedia Commons; cut to 11 s, recoloured and given a "
+                        "camera overlay (see `examples/demo_video/CREDITS.md`).</small>")
+        with gr.Column(scale=1):
+            feed = gr.Image(label="CAM 03: live hazards (HIGH = red, MED = orange)", type="pil", format="jpeg")
+            feed_status = gr.HTML()
+    play_btn.click(make_demo_player(detector, alerts_html), inputs=[lang], outputs=[feed, feed_status],
+                   concurrency_limit=LIVE_CONCURRENCY, concurrency_id=LIVE_CONCURRENCY_ID, show_progress="hidden")
+
+
 # ---------- UI ----------
 def build_live_tab(detector: Any, languages: dict[str, str], alerts_html: AlertsHtml) -> None:
     """Add the Live webcam UI to the enclosing gr.Blocks / gr.Tab."""
@@ -175,5 +242,7 @@ def build_live_tab(detector: Any, languages: dict[str, str], alerts_html: Alerts
         stream_every=LIVE_INTERVAL_S,
         time_limit=LIVE_TIME_LIMIT_S,
         concurrency_limit=LIVE_CONCURRENCY,
+        concurrency_id=LIVE_CONCURRENCY_ID,
         show_progress="hidden",
     )
+    build_demo_camera(detector, lang, alerts_html)
