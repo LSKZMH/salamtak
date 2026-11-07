@@ -1,19 +1,42 @@
 # Results v2: Salamtak سلامتك hazard evaluation
 
-Status: **in progress** (Chat 10). "Before" numbers are in; the v1 + new rules and v2 columns fill in as those ship.
+Status: **all three columns measured** (Chat 10, 04:10 Doha). v2 = `plitip/team-qh-091-safesite` `v2/best.pt` (61 epochs, finished 03:47).
 
 ## Headline table
 
 | Metric | Before (v1, old rules) | v1 + new rules | v2 + new rules |
 |---|---|---|---|
-| Qatar set: catch rate | **25%** (2/8) · 33% (2/6) on the original v1 hazard ids | **25%** (2/8), live Space | |
-| Qatar set: false alarms per photo | **0.00** (0 on 6 clean photos) | **0.00**, live Space | |
-| ConstructionSite subset: catch rate per rule | no_helmet **29%** (46/156) · machinery_zone **9%** (2/23) · fall_no_harness **0%** (0/23) | same (identical predictions on all 490 photos) | |
-| ConstructionSite subset: false-alarm rate per rule | no_helmet 12% (40/334) · machinery_zone 1% (4/467) · fall_no_harness 1% (7/467) | same | |
-| CPU seconds per photo (Space, server-side) | **0.10 mean · 0.09 median · 0.18 max** | **0.09 mean · 0.08 median · 0.10 max** | |
-| End-to-end round trip from Doha (upload + queue + result) | 8.5 s median (7.8–13.0 s) | 5.9 s median (4.8–7.1 s) | |
+| Qatar set: catch rate | **25%** (2/8) · 33% (2/6) on the original v1 hazard ids | **25%** (2/8), live Space | **62%** (5/8), local |
+| Qatar set: false alarms per photo | **0.00** (0 on 6 clean photos) | **0.00**, live Space | **0.25** (3 false alarms; 1 of 6 clean photos flagged) |
+| ConstructionSite subset: catch rate per rule | no_helmet **29%** (46/156) · machinery_zone **9%** (2/23) · fall_no_harness **0%** (0/23) | same (identical predictions on all 490 photos) | no_helmet **91%** (142/156) · machinery_zone **78%** (18/23) · fall_no_harness **9%** (2/23); overall **80%** (162/202) |
+| ConstructionSite subset: false-alarm rate per rule | no_helmet 12% (40/334) · machinery_zone 1% (4/467) · fall_no_harness 1% (7/467) | same | no_helmet 31% (104/334) · machinery_zone 26% (122/467) · fall_no_harness 2% (11/467); 0.48 per photo, 111/300 clean flagged |
+| CPU seconds per photo (Space, server-side) | **0.10 mean · 0.09 median · 0.18 max** | **0.09 mean · 0.08 median · 0.10 max** | ≈ same as v1: trained detector v2/v1 median time ratio **0.98** (alternated on the same photos, local) |
+| End-to-end round trip from Doha (upload + queue + result) | 8.5 s median (7.8–13.0 s) | 5.9 s median (4.8–7.1 s) | not deployed |
 
 Gate 3 criterion 4 (≤ 3.0 s per photo in the Space): **pass** on v1 (0.18 s worst case).
+
+## Gate 3 (v2 replaces v1?) — Chat 10's criteria
+
+| # | Criterion | v1 + new rules | v2 + new rules | Result |
+|---|---|---|---|---|
+| 3 | Qatar catch rate not lower | 25% | 62% | pass |
+| 3 | Qatar false alarms per photo not higher by > 0.1 | 0.00 | 0.25 (+0.25) | **FAIL** |
+| 4 | CPU s/photo in the Space ≤ 3.0 | 0.09 mean · 0.10 max | ≈ same (ratio 0.98) | pass |
+
+From Chat 7's `metrics.json` (Chat 7 owns 1–2): criterion 1 helmet 0.937 vs floor 0.919 pass, **no_helmet 0.905 vs floor
+0.908 fails by 0.003**; criterion 2 (fully labelled cs/fr/chd/ppe) person 0.80 vs 0.50, vest 0.84 vs 0.56, no_vest 0.62 vs 0.22: pass.
+**As written, Gate 3 fails: keep v1 weights.**
+
+**Why v2's false alarms rise, and a possible fix (Chat 8's call):** all 3 Qatar false alarms come from rule geometry, not from v2
+seeing a hazard that isn't there. v2 finds far more people, which exposes it:
+- `no_helmet` fires on *absence* of a helmet box: a small far worker who wears a helmet (`doha_alsadd_excavator`) and a 0.46-confidence
+  "person" cut off at the frame edge (`pearl_qanat_mast_platform`).
+- `machinery_zone` measures 2D distance: a tiny background vehicle next to foreground workers (`doha_roadside_crew_meeting`).
+
+Simulation (experiment only, detections filtered before the unchanged rules: drop persons with confidence < 0.5 or touching the frame
+edge, drop vehicle/machinery boxes < 5% of image height): Qatar **62% caught, 0.08 false alarms per photo, 0/6 clean flagged**, which
+passes criterion 3. In `rules.py` terms: use the "no helmet box on the head" clause only for persons ≥ 0.5 confidence not touching the
+border (else require an explicit `no_helmet` box), and skip machinery/vehicle boxes much shorter than the person.
 
 **Preview, v1 + new rules before deploy** (local, `main` at `fa53518`, `--detector combined`): same 25% (2/8) catch rate and
 0 false alarms. The new rules have no inputs yet: `crane_hook`, `rebar`, `utility_pole`, `power_line`, `fire`, `welding`, …
@@ -26,7 +49,7 @@ flagged 0/6. Both false alarms come from rule geometry that v2's better person d
 `doha_alsadd_excavator` (no_helmet on a small far worker who wears a helmet too small to detect) and
 `doha_roadside_crew_meeting` (machinery_zone from a tiny background vehicle next to foreground workers in 2D).
 With 12 photos, Gate 3 criterion 3 (false alarms up by at most 0.1 per photo) fails at 2 false alarms and passes at 1.
-Final v2 numbers replace this preview.
+Superseded by the final v2 numbers above.
 
 ## How each number was produced
 
@@ -86,13 +109,26 @@ Before = `d60cfbb` (old rules); v1 + new rules = `main` at `fa53518`; both train
 - **Possible leakage for v2:** ConstructionSite's images come from MOCS, and the v2 training mix includes Roboflow `yisong-li/mocs`.
   v2 may have seen some benchmark images in training, so a v2 gain on ConstructionSite is an upper bound.
 - **Rule 1 mapping:** Rule 1 covers all basic PPE; we score helmets only.
+- **v2's ConstructionSite gain (24% → 80%) is an upper bound** because of the MOCS overlap above, and its false alarms rise too (0.10 → 0.48 per photo);
+  some `machinery_zone` "false alarms" may be workers near idle excavators, which Rule 4 (operating excavator, blind spot) does not count (not checked).
 - **Rules 2 and 4 have 23 positives each** in the whole test split: one photo moves their catch rate by 4 points.
 - **Benchmark "no violation" is the annotators' judgement**, and its photos are mostly MOCS sites in China, often wide shots
   with small, distant workers, harder than our demo photos. Some `no_helmet` "false alarms" may be real bare heads they didn't flag.
 
 ## Detector mAP50 (from Chat 7)
 
-_To fill in from `metrics.json`._ v1 on its own val split: mAP50 0.549 (helmet 0.94, no_helmet 0.93).
+Both models on the **same** images (Chat 7's `v2/metrics.json`):
+
+| Val set | Model | person | helmet | no_helmet | vest | no_vest | machinery | vehicle | mean |
+|---|---|---|---|---|---|---|---|---|---|
+| v1 val (hh, cs, fr; 4,109 imgs) | v1 | 0.17 | 0.94 | 0.93 | 0.19 | 0.08 | 0.86 | 0.67 | 0.547 |
+| v1 val | v2 | 0.02 | 0.94 | 0.90 | 0.07 | 0.01 | 0.15 | 0.23 | 0.331 |
+| fully labelled (cs, fr, chd, ppe; 1,016 imgs) | v1 | 0.50 | 0.61 | 0.13 | 0.56 | 0.22 | 0.31 | 0.01 | 0.333 |
+| fully labelled | v2 | **0.80** | **0.82** | **0.67** | **0.84** | **0.62** | **0.78** | **0.50** | **0.719** |
+
+v2 overall on its own 11-class val (6,380 imgs): mAP50 **0.524** (harness 0.85, scaffold 0.99, utility_pole 0.18).
+The v1 val set has unlabelled persons/vests in its biggest source (hh), so its person/vest/machinery rows punish a model that finds them;
+the fully labelled set is the fair comparison.
 
 ## Which weights the Space runs
 
