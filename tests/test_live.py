@@ -139,8 +139,10 @@ def test_demo_player_yields_a_verdict_for_every_frame_in_real_time():
     play = live.make_demo_player(detect.MockDetector(), _no_alerts, sleep=waits.append)
     out = list(play("en"))
     assert len(out) == len(list(live.clip_frames(live.DEMO_CLIP))) == len(waits)
-    assert all(img is not None for img, _ in out)
-    assert "Live · Unsafe" in out[-1][1]  # mock site: a person without a helmet
+    assert all(feed.startswith("<img") and "data:image/jpeg;base64," in feed for feed, _ in out)
+    statuses = [s for _, s in out if isinstance(s, str)]
+    assert any("Live · Unsafe" in s for s in statuses)  # mock site: a person without a helmet
+    assert len(statuses) < len(out)  # the verdict panel redraws only when it changes
     assert all(0 <= w <= 1 / live.DEMO_FPS for w in waits)
 
 
