@@ -22,6 +22,7 @@ from safesite import alerts, detect, live, openvocab
 from safesite.annotate import annotate
 from safesite.pipeline import Analysis, ImageTooLargeError, analyze_image
 from safesite.types import Hazard, SceneContext
+from safesite.verdict import verdict
 
 # code -> display name (native script first so workers recognise it); codes match alerts.LANGUAGES
 LANGUAGES: dict[str, str] = {
@@ -87,8 +88,6 @@ CONCURRENCY = 1  # one photo at a time: torch already uses every core
 EXAMPLES_DIR = Path(__file__).parent / "examples"
 TABLE_HEADERS = ["Hazard", "Severity", "Reason"]
 DISCLAIMER = "Advisory only: no alert does not mean no hazard. Always follow your site safety officer."
-# (min score, css class, status word)
-SCORE_BANDS = ((80, "good", "Good"), (50, "warn", "Needs attention"), (0, "bad", "Unsafe"))
 # Construction-site look: asphalt + safety yellow, hazard-stripe band, condensed signage type.
 SAFETY_YELLOW = "#FFC20E"
 ASPHALT = "#1B1C1E"
@@ -121,6 +120,9 @@ CSS = f"""
 .ss-score.ss-bad{{color:#b91c1c}}.ss-score.ss-na{{color:#4b5563}}
 .dark .ss-score.ss-good{{color:#4ade80}}.dark .ss-score.ss-warn{{color:#fbbf24}}
 .dark .ss-score.ss-bad{{color:#f87171}}.dark .ss-score.ss-na{{color:#9ca3af}}
+.ss-card .ss-action{{background:var(--ss-asphalt);color:var(--ss-yellow);font-family:'Barlow Condensed',sans-serif;
+  font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:1.15rem;padding:8px 12px;margin:10px 0 4px;
+  border-radius:2px}}
 .ss-card p{{margin:.5em 0 0;font-size:.92rem}}.ss-card ul{{margin:.4em 0 0;font-size:.88rem}}
 .ss-alerts{{list-style:none;padding:0;margin:0;display:grid;gap:8px;font-size:1.2rem;line-height:1.5}}
 .ss-alerts li{{text-align:start;background:var(--ss-yellow);color:#111;font-weight:700;padding:10px 14px;
@@ -138,7 +140,7 @@ HEADER_HTML = (
     "<header class='ss-header'>"
     "<div class='ss-header-body'>"
     "<h1 class='ss-brand' style='margin:0'>Salamtak<span lang='ar' dir='rtl'>سلامتك</span></h1>"
-    "<p class='ss-tagline' style='margin:0'>One photo of a site → hazards, a 0–100 safety score and short alerts "
+    "<p class='ss-tagline' style='margin:0'>One photo of a site → hazards, a Safe / Unsafe verdict and short alerts "
     "in workers' languages. Built for Qatar: midday summer work ban and WBGT stop-work rule.</p></div>"
     "<div class='ss-badges' aria-label='About this tool'>"
     "<span class='ss-badge'>Computer vision</span><span class='ss-badge'>Rules engine</span>"
@@ -208,21 +210,24 @@ def resolve_time(override: str | None, image: Image.Image) -> tuple[datetime, st
 
 
 # ---------- presentation ----------
-def _band(value: int) -> tuple[str, str]:
-    return next((css, word) for floor, css, word in SCORE_BANDS if value >= floor)
+def action_html(text: str) -> str:
+    """The 'alert the safety officer' strip under the verdict; empty when there is nothing to do."""
+    if not text:
+        return ""
+    return f"<p class='ss-action'><span aria-hidden='true'>⚠ </span>{html.escape(text)}</p>"
 
 
-def _score_html(result: Analysis, taken_at: datetime, source: str, secs: float) -> str:
+def _score_html(result: Analysis, taken_at: datetime, source: str, secs: float, mode: str = "site") -> str:
     if result.assessed:
-        css, word = _band(result.score)
-        headline = f"{result.score}/100 · {word}"
-        aria = f"Safety score {result.score} out of 100, {word}"
+        v = verdict(result.hazards, mode)
+        css, headline, aria, action = v.css, v.word, f"Safety verdict: {v.word}", action_html(v.action)
     else:
-        css, headline, aria = "na", "Not assessed", "Safety score not assessed"
+        css, headline, aria, action = "na", "Not assessed", "Safety verdict: not assessed", ""
     highs = sum(h.severity == "High" for h in result.hazards)
     notes = "".join(f"<li>{html.escape(n)}</li>" for n in result.notes)
     return (
         f"<div role='status' aria-label='{aria}' class='ss-card ss-{css}'><div class='ss-score ss-{css}'>{headline}</div>"
+        f"{action}"
         f"<p><strong>{highs} High · {len(result.hazards) - highs} Medium</strong> hazards<br>"
         f"Photo time: {taken_at:%Y-%m-%d %H:%M} ({html.escape(source)})<br>"
         f"Detector: {html.escape(DETECTOR.name)} · {secs:.2f} s</p>"
@@ -282,7 +287,8 @@ def analyze(
     log.info("analyzed: %d detections, %d hazards, score %d, assessed=%s, %.2fs",
              len(result.detections), len(result.hazards), result.score, result.assessed, secs)
     table = [[h.id, h.severity, h.reason] for h in result.hazards]
-    return _score_html(result, taken_at, source, secs), _alerts_html(result.hazards, lang_key), annotated, table
+    return (_score_html(result, taken_at, source, secs, mode_key), _alerts_html(result.hazards, lang_key),
+            annotated, table)
 
 
 # ---------- UI ----------

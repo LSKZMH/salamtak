@@ -22,6 +22,7 @@ from safesite import score
 from safesite.annotate import annotate
 from safesite.pipeline import Analysis, analyze_image
 from safesite.types import Hazard, SceneContext
+from safesite.verdict import verdict
 
 log = logging.getLogger(__name__)
 
@@ -33,8 +34,6 @@ STABLE_WINDOW = 3  # frames remembered per viewer
 STABLE_MIN_HITS = 2  # a hazard must appear in this many of them before it is shown
 WBGT_MIN, WBGT_MAX = 0.0, 60.0
 DOHA_TZ = timezone(timedelta(hours=3))  # Qatar: UTC+3, no DST
-# (min score, css class, status word): same bands as the Photo tab
-SCORE_BANDS = ((80, "good", "Good"), (50, "warn", "Needs attention"), (0, "bad", "Unsafe"))
 PAUSED_HTML = ("<p role='status'>Live analysis paused: this frame could not be analysed. "
                "It will try again on the next frame.</p>")
 
@@ -104,23 +103,23 @@ def analyze_frame(detector: Any, frame: Any, context: SceneContext, history: His
 
 
 # ---------- presentation ----------
-def _band(value: int) -> tuple[str, str]:
-    return next((css, word) for floor, css, word in SCORE_BANDS if value >= floor)
-
-
 def status_html(score_value: int, shown: Sequence[Hazard], detector_name: str, secs: float,
                 alerts: str, note: str = "") -> str:
-    """Score line, stable hazards and alerts. ``alerts`` is trusted HTML from app._alerts_html."""
+    """Safe/Unsafe line, what to do, stable hazards and alerts. ``alerts`` is trusted HTML from
+    app._alerts_html. ``score_value`` is kept for callers but no longer shown (verdict only)."""
+    action = ""
     if note:
         css, headline = "na", f"Live · {html.escape(note)}"
     else:
-        css, word = _band(score_value)
-        headline = f"Live · {score_value}/100 · {word}"
+        v = verdict(shown)
+        css, headline = v.css, f"Live · {v.word}"
+        if v.action:
+            action = f"<p class='ss-action'><span aria-hidden='true'>⚠ </span>{html.escape(v.action)}</p>"
     rows = "".join(f"<li><strong>{html.escape(h.severity)}</strong> {html.escape(h.id)}: "
                    f"{html.escape(h.reason)}</li>" for h in shown)
     return (
-        f"<div role='status' aria-live='polite'><div class='ss-score ss-{css}'>{headline}</div>"
-        f"{f'<ul>{rows}</ul>' if rows else ''}{alerts}"
+        f"<div role='status' aria-live='polite' class='ss-card ss-{css}'><div class='ss-score ss-{css}'>{headline}</div>"
+        f"{action}{f'<ul>{rows}</ul>' if rows else ''}{alerts}"
         f"<p><small>Detector: {html.escape(detector_name)} · {secs:.2f} s/frame · a hazard shows after "
         f"{STABLE_MIN_HITS} of {STABLE_WINDOW} frames</small></p></div>"
     )

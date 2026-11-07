@@ -13,7 +13,7 @@ import app
 from safesite import alerts
 from safesite.annotate import SEVERITY_COLORS, annotate
 from safesite.pipeline import Analysis
-from safesite.types import Hazard
+from safesite.types import HAZARD_SEVERITY, Hazard
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 SUMMER_NOON = datetime(2026, 7, 15, 12, 30)
@@ -52,14 +52,16 @@ def test_analyze_runs_end_to_end_on_examples(row):
     """Each example row exactly as a judge's click passes it (photo, time, WBGT, outdoor, lang, mode)."""
     path, *inputs = row
     score_html, alert_html, annotated, table = app.analyze(Image.open(path), *inputs)
-    assert "/100" in score_html and max(annotated.size) <= 1280
+    assert ("Unsafe" in score_html or "Safe" in score_html) and "/100" not in score_html
+    assert max(annotated.size) <= 1280
     assert table and all(len(row) == 3 for row in table)
     assert "<li" in alert_html
 
 
 def test_summer_noon_example_reads_exif_and_floors_score(tmp_path):
     score_html, *_ = app.analyze(Image.open(EXAMPLES / "site_summer_noon.jpg"), "", 33.5, True, "en", "Site")
-    assert "0/100" in score_html and "photo EXIF" in score_html and "2026-07-15 12:30" in score_html
+    assert "Unsafe" in score_html and "safety officer" in score_html
+    assert "photo EXIF" in score_html and "2026-07-15 12:30" in score_html
 
 
 def test_analyze_without_image_raises():
@@ -143,20 +145,34 @@ def test_no_hazards_message():
 
 
 # ---------- score rendering ----------
-def _analysis(score: int, assessed: bool = True) -> Analysis:
-    return Analysis((), (), score, assessed, ("a <note>",))
+def _analysis(score: int, assessed: bool = True, hazards: tuple = ()) -> Analysis:
+    return Analysis((), hazards, score, assessed, ("a <note>",))
 
 
-@pytest.mark.parametrize("score, css, word", [(80, "good", "Good"), (79, "warn", "Needs attention"),
-                                              (50, "warn", "Needs attention"), (49, "bad", "Unsafe")])
-def test_score_bands_show_text_status(score, css, word):
-    out = app._score_html(_analysis(score), SUMMER_NOON, "photo EXIF", 0.1)
-    assert f"ss-{css}" in out and f"{score}/100 · {word}" in out and "a &lt;note&gt;" in out
+def _hazard(hazard_id: str) -> Hazard:
+    return Hazard(id=hazard_id, severity=HAZARD_SEVERITY[hazard_id], reason="seen")
 
 
-def test_unassessed_photo_never_shows_a_score():
+@pytest.mark.parametrize("hazards, css, word, action", [
+    ((), "good", "Safe", ""),
+    ((_hazard("trip_cord"),), "warn", "Unsafe", "Alert the site safety officer."),
+    ((_hazard("no_helmet"), _hazard("trip_cord")), "bad", "Unsafe", "Stop work and alert the site safety officer"),
+])
+def test_score_card_shows_verdict_and_action_not_a_number(hazards, css, word, action):
+    out = app._score_html(_analysis(50, hazards=hazards), SUMMER_NOON, "photo EXIF", 0.1)
+    assert f"ss-card ss-{css}" in out and f">{word}<" in out and "a &lt;note&gt;" in out
+    assert "/100" not in out and "50" not in out.split("Photo time")[0]
+    assert (action in out) if action else ("ss-action" not in out)
+
+
+def test_home_mode_action_does_not_mention_a_site_officer():
+    out = app._score_html(_analysis(90, hazards=(_hazard("trip_cord"),)), SUMMER_NOON, "x", 0.1, "home")
+    assert "Fix this soon." in out and "safety officer" not in out
+
+
+def test_unassessed_photo_never_shows_a_verdict():
     out = app._score_html(_analysis(100, assessed=False), SUMMER_NOON, "x", 0.1)
-    assert "Not assessed" in out and "100/100" not in out
+    assert "Not assessed" in out and ">Safe<" not in out and "ss-action" not in out
 
 
 # ---------- UI + annotation ----------

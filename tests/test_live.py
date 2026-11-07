@@ -117,6 +117,13 @@ def test_handler_survives_a_detector_crash():
     assert history == ()
 
 
+def test_status_shows_unsafe_and_safety_officer_action_without_a_number():
+    hazard = Hazard(id="no_helmet", severity=Severity.HIGH, reason="seen")
+    out = live.status_html(75, (hazard,), "Mock", 0.1, "")
+    assert "Live · Unsafe" in out and "alert the site safety officer" in out and "/100" not in out
+    assert "Live · Safe" in live.status_html(100, (), "Mock", 0.1, "")
+
+
 def test_status_escapes_hazard_text():
     hazard = Hazard(id="no_helmet", severity=Severity.HIGH, reason="<script>x</script>")
     html_out = live.status_html(100, (hazard,), "Mock", 0.1, "<p>a</p>")
