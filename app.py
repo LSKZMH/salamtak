@@ -317,6 +317,9 @@ def build_ui() -> gr.Blocks:
                         "detector. Harness, scaffold, ladder, shade, water, cord and all Home-mode finds are real.")
         elif DETECTOR.is_mock:
             gr.Markdown("> **Demo mode:** the detector is a mock that returns fixed fake boxes for every photo.")
+        # First thing visitors see: the demo site camera, analysed live (trained detector + rules).
+        live.build_demo_camera(LIVE_DETECTOR, LANGUAGES, _alerts_html)
+        gr.HTML("<h2 class='ss-section-title'>Check your own site</h2>")
         with gr.Tab("Photo"):
             with gr.Row():
                 with gr.Column(scale=1):

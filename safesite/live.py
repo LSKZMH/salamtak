@@ -186,6 +186,20 @@ def frame_html(image: Image.Image, quality: int = DEMO_JPEG_QUALITY) -> str:
 
 FEED_PLACEHOLDER = ("<div class='ss-feed-idle' style='aspect-ratio:16/9;display:flex;align-items:center;"
                     "justify-content:center;background:#111;color:#bbb'>CAM 03 · press play</div>")
+IDLE_WIDTH = 640  # the still shown before play: same size as the analysed frames
+
+
+def idle_feed_html(clip: Path = DEMO_CLIP) -> str:
+    """The clip's first frame with a 'press play' label, shown before the demo starts (plain box if missing)."""
+    first = next(clip_frames(clip), None) if clip.is_file() else None
+    if first is None:
+        return FEED_PLACEHOLDER
+    still = Image.fromarray(first)
+    still.thumbnail((IDLE_WIDTH, IDLE_WIDTH))
+    label = ("<div style='position:absolute;inset:0;display:flex;align-items:center;justify-content:center'>"
+             "<span style='background:rgba(0,0,0,.7);color:#FFC20E;font-weight:700;padding:8px 14px;"
+             "border-radius:2px;letter-spacing:.6px'>▶ PRESS PLAY: LIVE HAZARD DETECTION</span></div>")
+    return f"<div class='ss-feed-idle' style='position:relative'>{frame_html(still)}{label}</div>"
 
 
 def make_demo_player(detector: Any, alerts_html: AlertsHtml, clip: Path = DEMO_CLIP, fps: float = DEMO_FPS,
@@ -226,19 +240,22 @@ def make_demo_player(detector: Any, alerts_html: AlertsHtml, clip: Path = DEMO_C
     return play
 
 
-def build_demo_camera(detector: Any, lang: Any, alerts_html: AlertsHtml) -> None:
-    """'Play demo site camera' button, its feed and status, inside the Live tab."""
-    gr.Markdown("### Demo site camera\nNo webcam? Play an 11-second clip from a site camera. Every frame is "
-                "checked live by the same detector and rules.")
-    with gr.Row():
-        with gr.Column(scale=1):
-            play_btn = gr.Button("▶ Play demo site camera", variant="primary", elem_classes="ss-run")
-            gr.Markdown("<small>Clip: *Building construction Excavator Moira Close Broadwater Farm Haringey 2025 01*"
-                        " by Acabashi, CC BY-SA 4.0, via Wikimedia Commons; cut to 11 s, recoloured and given a "
-                        "camera overlay (see `examples/demo_video/CREDITS.md`).</small>")
-        with gr.Column(scale=1):
-            gr.Markdown("<small>CAM 03: live hazards (HIGH = red, MED = orange)</small>")
-            feed = gr.HTML(FEED_PLACEHOLDER)
+def build_demo_camera(detector: Any, languages: dict[str, str], alerts_html: AlertsHtml) -> None:
+    """Demo site camera section (feed, play button, language, live verdict). app.py puts it at the top."""
+    gr.HTML("<h2 class='ss-section-title'>Demo site camera: live hazard detection</h2>")
+    with gr.Row(equal_height=False):
+        with gr.Column(scale=3):
+            feed = gr.HTML(idle_feed_html())
+            gr.Markdown("<small>CAM 03 · HIGH = red, MED = orange. Clip: *Building construction Excavator Moira "
+                        "Close Broadwater Farm Haringey 2025 01* by Acabashi, CC BY-SA 4.0, via Wikimedia Commons; "
+                        "cut to 11 s, recoloured and given a camera overlay (see "
+                        "`examples/demo_video/CREDITS.md`).</small>")
+        with gr.Column(scale=2):
+            gr.Markdown("An 11-second clip from a site camera. Every frame is checked live by the trained detector "
+                        "and the safety rules, the same as a real camera feed.")
+            play_btn = gr.Button("▶ Play demo site camera", variant="primary", size="lg", elem_classes="ss-run")
+            lang = gr.Dropdown(label="Alert language", choices=[(n, c) for c, n in languages.items()],
+                               value=next(iter(languages)))
             feed_status = gr.HTML()
     play_btn.click(make_demo_player(detector, alerts_html), inputs=[lang], outputs=[feed, feed_status],
                    concurrency_limit=LIVE_CONCURRENCY, concurrency_id=LIVE_CONCURRENCY_ID, show_progress="hidden")
@@ -274,4 +291,3 @@ def build_live_tab(detector: Any, languages: dict[str, str], alerts_html: Alerts
         concurrency_id=LIVE_CONCURRENCY_ID,
         show_progress="hidden",
     )
-    build_demo_camera(detector, lang, alerts_html)

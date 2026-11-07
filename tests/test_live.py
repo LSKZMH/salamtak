@@ -171,3 +171,18 @@ def test_app_has_photo_and_live_tabs():
 
     labels = {b.label for b in app.demo.blocks.values() if isinstance(b, gr.Tab)}
     assert {"Photo", "Live"} <= labels
+
+
+def test_demo_camera_is_at_the_top_of_the_page_before_the_tabs():
+    import app
+
+    blocks = app.demo.blocks
+    play = [i for i, b in blocks.items() if isinstance(b, gr.Button) and "Play demo site camera" in str(b.value)]
+    tabs = [i for i, b in blocks.items() if isinstance(b, gr.Tab)]
+    assert len(play) == 1 and play[0] < min(tabs)  # created first = rendered first
+
+
+def test_idle_feed_shows_the_clips_first_frame_until_play():
+    idle = live.idle_feed_html()
+    assert "data:image/jpeg;base64," in idle and "PRESS PLAY" in idle
+    assert live.idle_feed_html(live.DEMO_CLIP.parent / "missing.mp4") == live.FEED_PLACEHOLDER
