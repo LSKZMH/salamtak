@@ -35,7 +35,10 @@ seeing a hazard that isn't there. v2 finds far more people, which exposes it:
 
 Simulation (experiment only, detections filtered before the unchanged rules: drop persons with confidence < 0.5 or touching the frame
 edge, drop vehicle/machinery boxes < 5% of image height): Qatar **62% caught, 0.08 false alarms per photo, 0/6 clean flagged**, which
-passes criterion 3. In `rules.py` terms: use the "no helmet box on the head" clause only for persons ≥ 0.5 confidence not touching the
+passes criterion 3. On the ConstructionSite subset the same simulation gives **72% caught (146/202), 0.33 false alarms per photo**
+(plain v2: 80%, 0.48). The person filter is the good half (`no_helmet` 86% caught, false alarms 31% → 17%); the fixed 5%-height
+vehicle filter is too blunt for wide shots (`machinery_zone` caught 78% → 43%), so compare the machine's height with the person's
+instead of a fixed cut. In `rules.py` terms: use the "no helmet box on the head" clause only for persons ≥ 0.5 confidence not touching the
 border (else require an explicit `no_helmet` box), and skip machinery/vehicle boxes much shorter than the person.
 
 **Preview, v1 + new rules before deploy** (local, `main` at `fa53518`, `--detector combined`): same 25% (2/8) catch rate and
