@@ -20,6 +20,14 @@ Gate 3 criterion 4 (≤ 3.0 s per photo in the Space): **pass** on v1 (0.18 s wo
 come only from Chat 9's new YOLOE prompts or the v2 weights. No regression: `worker_down` did not fire on the seated
 worker or the crowd photos. The official column is measured on the Space after Chat 9 deploys.
 
+**Preview, v2 mid-run checkpoint** (`v2/checkpoints/last.pt` at epoch 35, 03:15; local, `--detector combined`, new rules):
+Qatar catch rate **62% (5/8)**: all 4 `no_helmet` and 1 of 2 `machinery_zone`. False alarms **0.17 per photo** (2), clean photos
+flagged 0/6. Both false alarms come from rule geometry that v2's better person detection now exposes:
+`doha_alsadd_excavator` (no_helmet on a small far worker who wears a helmet too small to detect) and
+`doha_roadside_crew_meeting` (machinery_zone from a tiny background vehicle next to foreground workers in 2D).
+With 12 photos, Gate 3 criterion 3 (false alarms up by at most 0.1 per photo) fails at 2 false alarms and passes at 1.
+Final v2 numbers replace this preview.
+
 ## How each number was produced
 
 - **Qatar set:** `examples/qatar_test/labels.csv`, 12 photos (9 Qatar, 3 Dubai; 6 with hazards, 6 clean), never used for training.
