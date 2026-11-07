@@ -89,13 +89,87 @@ TABLE_HEADERS = ["Hazard", "Severity", "Reason"]
 DISCLAIMER = "Advisory only: no alert does not mean no hazard. Always follow your site safety officer."
 # (min score, css class, status word)
 SCORE_BANDS = ((80, "good", "Good"), (50, "warn", "Needs attention"), (0, "bad", "Unsafe"))
-CSS = """
-.ss-score{font-size:2.6rem;font-weight:700;line-height:1.1}
-.ss-good{color:#166534}.ss-warn{color:#92400e}.ss-bad{color:#b91c1c}.ss-na{color:#4b5563}
-.dark .ss-good{color:#4ade80}.dark .ss-warn{color:#fbbf24}.dark .ss-bad{color:#f87171}.dark .ss-na{color:#9ca3af}
-.ss-alerts{font-size:1.25rem;line-height:1.8}.ss-alerts li{text-align:start}
-input[type=checkbox],input[type=radio]{min-width:24px;min-height:24px}
+# Construction-site look: asphalt + safety yellow, hazard-stripe band, condensed signage type.
+SAFETY_YELLOW = "#FFC20E"
+ASPHALT = "#1B1C1E"
+CSS = f"""
+:root{{--ss-yellow:{SAFETY_YELLOW};--ss-asphalt:{ASPHALT};--ss-stripe:repeating-linear-gradient(-45deg,
+  {SAFETY_YELLOW} 0 14px,{ASPHALT} 14px 28px)}}
+.ss-header{{background:var(--ss-asphalt);color:#f5f5f4;border-radius:4px;overflow:hidden;margin-bottom:4px}}
+.dark .ss-header{{border:1px solid #3f3f46}}
+.ss-header-body{{padding:18px 22px 14px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px}}
+.ss-brand{{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2.6rem;letter-spacing:.5px;
+  color:var(--ss-yellow)!important;line-height:1;text-transform:uppercase}}
+.ss-brand *{{color:var(--ss-yellow)!important}}.ss-tagline{{color:#e7e5e4!important}}
+.ss-brand span{{display:inline-block;font-family:'Noto Sans Arabic',sans-serif;font-weight:700;
+  text-transform:none;margin-left:14px;font-size:.85em}}
+.ss-tagline{{flex:1 1 320px;color:#e7e5e4;font-size:1rem;line-height:1.45}}
+.ss-badges{{display:flex;flex-wrap:wrap;gap:6px;padding:0 22px 14px}}
+.ss-badge{{border:1px solid #57534e;color:#d6d3d1;font-size:.78rem;padding:2px 8px;border-radius:2px;
+  text-transform:uppercase;letter-spacing:.6px;font-family:'Barlow Condensed',sans-serif;font-weight:600}}
+.ss-stripe{{height:12px;background:var(--ss-stripe)}}
+.ss-disclaimer{{font-size:.85rem;color:#57534e;margin:6px 2px 0}}
+.dark .ss-disclaimer{{color:#a8a29e}}
+.ss-card{{border:1px solid #d6d3d1;border-inline-start:10px solid #78716c;background:#fff;padding:14px 18px;
+  border-radius:2px}}
+.dark .ss-card{{background:#232325;border-color:#3f3f46}}
+.ss-card.ss-good{{border-inline-start-color:#15803d}}.ss-card.ss-warn{{border-inline-start-color:#d97706}}
+.ss-card.ss-bad{{border-inline-start-color:#b91c1c}}.ss-card.ss-na{{border-inline-start-color:#78716c}}
+.ss-score{{font-family:'Barlow Condensed',sans-serif;font-size:3rem;font-weight:800;line-height:1;
+  text-transform:uppercase;letter-spacing:.5px}}
+.ss-score.ss-good{{color:#166534}}.ss-score.ss-warn{{color:#92400e}}
+.ss-score.ss-bad{{color:#b91c1c}}.ss-score.ss-na{{color:#4b5563}}
+.dark .ss-score.ss-good{{color:#4ade80}}.dark .ss-score.ss-warn{{color:#fbbf24}}
+.dark .ss-score.ss-bad{{color:#f87171}}.dark .ss-score.ss-na{{color:#9ca3af}}
+.ss-card p{{margin:.5em 0 0;font-size:.92rem}}.ss-card ul{{margin:.4em 0 0;font-size:.88rem}}
+.ss-alerts{{list-style:none;padding:0;margin:0;display:grid;gap:8px;font-size:1.2rem;line-height:1.5}}
+.ss-alerts li{{text-align:start;background:var(--ss-yellow);color:#111;font-weight:700;padding:10px 14px;
+  border-inline-start:8px solid var(--ss-asphalt);border-radius:2px}}
+.ss-alerts li small{{font-weight:400}}
+.ss-section-title{{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.8px;font-size:1.05rem;margin:0;border-bottom:3px solid var(--ss-yellow);display:inline-block}}
+.ss-run{{font-family:'Barlow Condensed',sans-serif!important;text-transform:uppercase;letter-spacing:1px;
+  font-size:1.2rem!important;font-weight:700!important}}
+[role=tab]{{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.8px;
+  font-weight:600;font-size:1rem}}
+input[type=checkbox],input[type=radio]{{min-width:24px;min-height:24px}}
 """
+HEADER_HTML = (
+    "<header class='ss-header'>"
+    "<div class='ss-header-body'>"
+    "<h1 class='ss-brand' style='margin:0'>Salamtak<span lang='ar' dir='rtl'>سلامتك</span></h1>"
+    "<p class='ss-tagline' style='margin:0'>One photo of a site → hazards, a 0–100 safety score and short alerts "
+    "in workers' languages. Built for Qatar: midday summer work ban and WBGT stop-work rule.</p></div>"
+    "<div class='ss-badges' aria-label='About this tool'>"
+    "<span class='ss-badge'>Computer vision</span><span class='ss-badge'>Rules engine</span>"
+    "<span class='ss-badge'>No LLM</span><span class='ss-badge'>7 languages</span></div>"
+    "<div class='ss-stripe' aria-hidden='true'></div></header>"
+)
+# Condensed signage font for headings (the body font comes from the theme).
+HEAD_HTML = ("<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>"
+             "<link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800"
+             "&display=swap'>")
+
+
+def build_theme() -> gr.themes.Base:
+    """Gradio theme: stone neutrals, safety-yellow primary button with black text, square corners."""
+    return gr.themes.Base(
+        primary_hue=gr.themes.colors.yellow,
+        neutral_hue=gr.themes.colors.stone,
+        radius_size=gr.themes.sizes.radius_sm,
+        font=[gr.themes.GoogleFont("Barlow"), gr.themes.GoogleFont("Noto Sans Arabic"), "sans-serif"],
+    ).set(
+        body_background_fill="#F3F1EC",
+        body_background_fill_dark="#141414",
+        button_primary_background_fill=SAFETY_YELLOW,
+        button_primary_background_fill_hover="#FFD24D",
+        button_primary_text_color="#111111",
+        button_primary_background_fill_dark=SAFETY_YELLOW,
+        button_primary_background_fill_hover_dark="#FFD24D",
+        button_primary_text_color_dark="#111111",
+        block_title_text_weight="600",
+        block_label_text_weight="600",
+    )
 
 
 # ---------- time ----------
@@ -148,7 +222,7 @@ def _score_html(result: Analysis, taken_at: datetime, source: str, secs: float) 
     highs = sum(h.severity == "High" for h in result.hazards)
     notes = "".join(f"<li>{html.escape(n)}</li>" for n in result.notes)
     return (
-        f"<div role='status' aria-label='{aria}'><div class='ss-score ss-{css}'>{headline}</div>"
+        f"<div role='status' aria-label='{aria}' class='ss-card ss-{css}'><div class='ss-score ss-{css}'>{headline}</div>"
         f"<p><strong>{highs} High · {len(result.hazards) - highs} Medium</strong> hazards<br>"
         f"Photo time: {taken_at:%Y-%m-%d %H:%M} ({html.escape(source)})<br>"
         f"Detector: {html.escape(DETECTOR.name)} · {secs:.2f} s</p>"
@@ -224,12 +298,7 @@ EXAMPLES = [
 
 def build_ui() -> gr.Blocks:
     with gr.Blocks(title="Salamtak سلامتك") as demo:
-        gr.Markdown(
-            "# Salamtak سلامتك\n"
-            "One photo of a site → hazards, a 0–100 safety score, and short alerts in workers' languages. "
-            "Includes Qatar's midday summer work ban and the WBGT stop-work rule. No LLM in the loop.  \n"
-            f"*{DISCLAIMER}*"
-        )
+        gr.HTML(HEADER_HTML + f"<p class='ss-disclaimer'>{html.escape(DISCLAIMER)}</p>")
         if LOAD_WARNING:
             gr.Markdown(f"> ⚠️ **{LOAD_WARNING}**")
         if PRIMARY.is_mock and OPEN_VOCAB:
@@ -254,8 +323,9 @@ def build_ui() -> gr.Blocks:
                         value="en",
                     )
                     mode = gr.Radio(label="Mode", choices=["Site", "Home"], value="Site")
-                    run = gr.Button("Check safety", variant="primary")
+                    run = gr.Button("Check safety", variant="primary", size="lg", elem_classes="ss-run")
                 with gr.Column(scale=1):
+                    gr.HTML("<h2 class='ss-section-title'>Site report</h2>")
                     score_box = gr.HTML()
                     alert_box = gr.HTML()
                     annotated = gr.Image(label="Annotated photo (HIGH = red, MED = orange); hazards listed below",
@@ -275,4 +345,4 @@ alerts.load_alerts()  # fail at boot, not mid-demo, if alerts.json is broken
 demo = build_ui()
 
 if __name__ == "__main__":
-    demo.launch(css=CSS, max_file_size=MAX_FILE_SIZE)
+    demo.launch(css=CSS, theme=build_theme(), head=HEAD_HTML, max_file_size=MAX_FILE_SIZE)
