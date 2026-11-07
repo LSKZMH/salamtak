@@ -1,11 +1,25 @@
 # Results v2: Salamtak سلامتك hazard evaluation
 
-Status: **the Space now runs v2n** (captain's call, deployed by Chat 9). Measured live (Chat 10, 07 Nov morning).
+Status: **the Space runs v2n + the helmet fix** (captain's call, deployed by Chat 9 as `0f2541a`). Measured live (Chat 10, 07 Nov).
 v2 = `plitip/team-qh-091-safesite` `v2/best.pt` (yolo26s, 61 epochs); **v2n = `v2n/best.pt` @ `b3fac75` (yolo26n, 83 epochs), the shipped model.**
+
+## Pitch numbers (shipped: v2n + new rules + helmet fix, Space at `0f2541a`)
+
+Measured live on the Space after the deploy (`python scripts/evaluate.py --space plitip/team-qh-091-safesite-app`):
+
+| | v1 (before) | **Shipped** |
+|---|---|---|
+| Qatar set: hazards caught | 25% (2/8) | **62% (5/8)** |
+| Qatar set: false alarms per photo | 0.00 | **0.00** (0 of 6 clean photos flagged) |
+| CPU seconds per photo in the Space | 0.10 mean · 0.18 max | **0.09 mean · 0.14 max** in this run (Chat 9 saw 0.09–0.21 s) |
+| ConstructionSite subset (outside benchmark, local) | 24% caught · 0.10 FA/photo | **61% caught (123/202) · 0.32 FA/photo** |
+| Credits spent | | **≈ $8.95** (`COSTS.md`) |
+
+Round trip from Doha in this run was 8.7 s median (7.9–11.6 s), which is mostly upload and queue time.
 
 ## Headline table
 
-**Pitch column = v2n + new rules (live Space).**
+The v2n column below is v2n with the rules **before** the helmet fix (live Space, 07 Nov ~10:00).
 
 | Metric | Before (v1, old rules) | v1 + new rules | v2 (s) + new rules | **v2n + new rules (shipped)** |
 |---|---|---|---|---|
@@ -43,7 +57,7 @@ v2n's one false alarm is `no_helmet` on `dubai_night_precast_lift` (night shot).
 helmet 0.932 vs floor 0.919 pass, no_helmet 0.897 vs floor 0.908 **misses by 0.011**. Criterion 2: person/vest/no_vest
 0.761/0.827/0.587 vs v1 0.50/0.56/0.22, pass.
 
-**Helmet absence fix** (Chat 8, `main` at `4f1b5a1`, merged 10:25 after the freeze; **not deployed** as of this write-up):
+**Helmet absence fix** (Chat 8, `main` at `4f1b5a1`, merged 10:25 after the freeze; **deployed** to the Space as `0f2541a`, and the live Qatar result matches the local one below):
 "no helmet seen" now needs a person with confidence ≥ 0.5 that isn't touching the frame edge, while an explicit bare-head box
 still counts. Measured locally with v2n + YOLOE. Local `main` before the fix reproduced the live Space exactly on the Qatar set.
 
