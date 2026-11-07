@@ -97,6 +97,32 @@ flagged 0/6. Both false alarms come from rule geometry that v2's better person d
 With 12 photos, Gate 3 criterion 3 (false alarms up by at most 0.1 per photo) fails at 2 false alarms and passes at 1.
 Superseded by the final v2 numbers above.
 
+## Why `fall_no_harness` catches only 9% (2/23), and why it was not changed
+
+The 23 ConstructionSite Rule 2 photos are almost all workers **on top of** a roof edge, steel beam, formwork or scaffold. The rule
+needs a person within 0.25× their height of a scaffold/ladder box, with no harness box on them. The shipped stack (v2n + YOLOE)
+rarely produces those inputs:
+- **Harness:** 0 detections in all 490 subset photos, from both the trained class and YOLOE. Any firing comes purely from the scaffold check.
+- **Scaffold/ladder:** found in 4 of 23 positives, and only by YOLOE. The trained scaffold class gave 1 box in 490 photos
+  (0.85/0.99 mAP50 on its own val does not transfer to these wide MOCS shots).
+- **Lower cut-offs:** no help. Still 2 of 23 caught at every setting, while false alarms grow from 9 to 28 photos.
+  There's almost no weak signal underneath (YOLOE's own floor is 0.15).
+- **New YOLOE prompts** (local experiment, person within 0.25× height of the prompt's box; rate = share of positive photos caught /
+  share of other photos flagged):
+
+| prompt | cut-off | caught (of 23) | false alarms (of 467 other photos) |
+|---|---|---|---|
+| `formwork` | 0.35 / 0.75 | 74% / 48% | 35% / 18% |
+| `worker standing on a beam` | 0.35 / 0.45 | 22% / 9% | 9% / 3% |
+| `worker working at height` | 0.35 | 9% | 7% |
+| `steel beam`, `roof edge`, `rooftop`, `elevated platform` | 0.25 | 0% | ≤ 1% |
+
+`formwork` fires on almost any concrete site (even at 0.75 it flags 82 photos to catch 11), so it detects
+"construction site", not "worker at height". No prompt gives a trade worth the 0.00 false alarms on the Qatar set.
+**Recommendation: leave the rule as shipped; pitch harness/at-height detection as a known limit and next step.** A real fix needs
+training data of workers at height, with and without harnesses, labelled per worker. ConstructionSite itself can't be
+used for that (evaluation only).
+
 ## How each number was produced
 
 - **Qatar set:** `examples/qatar_test/labels.csv`, 12 photos (9 Qatar, 3 Dubai; 6 with hazards, 6 clean), never used for training.
