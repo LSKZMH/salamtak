@@ -25,7 +25,7 @@ class Mode(StrEnum):
     HOME = "home"
 
 
-# Hazard id -> severity. Mirrors the "Hazard rules" table in CLAUDE.md.
+# Hazard id -> severity. Mirrors the rules in safesite/rules.py (summarised in README.md).
 HAZARD_SEVERITY: dict[str, Severity] = {
     "no_helmet": Severity.HIGH,
     "machinery_zone": Severity.HIGH,
@@ -49,7 +49,7 @@ HAZARD_SEVERITY: dict[str, Severity] = {
 }
 HAZARD_IDS: tuple[str, ...] = tuple(HAZARD_SEVERITY)
 
-# Trained detector classes (YOLO ids 0-6), from the Data section of CLAUDE.md.
+# Trained detector classes (YOLO ids 0-6), see "Model and data" in README.md.
 UNIFIED_CLASSES: tuple[str, ...] = ("person", "helmet", "no_helmet", "vest", "no_vest", "machinery", "vehicle")
 # v2 detector adds ids 7-10. A model is valid if its class names equal
 # UNIFIED_CLASSES (v1 weights) or MODEL_CLASSES_V2 (v2 weights).

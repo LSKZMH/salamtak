@@ -1,7 +1,7 @@
 """Evaluate the full SafeSite pipeline on our own Qatar test photos.
 
-Produces pitch numbers 2-4 from CLAUDE.md: per-hazard catch rate and false alarms,
-seconds per photo on CPU, and the credits total from COSTS.md. These photos are
+Produces the pitch numbers: per-hazard catch rate and false alarms,
+seconds per photo on CPU, and the credits total from COSTS.md if present. These photos are
 never used for training.
 
 labels.csv (UTF-8, one row per photo; only `filename` and `hazards` are required):
@@ -70,7 +70,7 @@ TIME_HAZARD, WBGT_HAZARD = "midday_ban", "wbgt_stop"  # rules that need an input
 WBGT_CONTEXT_FIELDS = ("wbgt_c", "wbgt")
 EXIT_OK, EXIT_NO_PHOTOS, EXIT_BAD_LABELS, EXIT_SKIPPED = 0, 1, 2, 3
 
-# Fallback when safesite.types has no HAZARD_IDS. Mirrors the CLAUDE.md hazard table + PLAN-v2.
+# Fallback when safesite.types has no HAZARD_IDS. Mirrors safesite/rules.py.
 CLAUDE_MD_HAZARD_IDS = (
     "no_helmet", "machinery_zone", "fall_no_harness", "midday_ban", "wbgt_stop",
     "no_vest_near_vehicle", "heat_welfare_gap", "trip_cord",

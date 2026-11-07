@@ -1,13 +1,13 @@
 """Download datasets, inspect them, convert to YOLO format, push a private dataset.
 
-Pipeline (CLAUDE.md "Data" section). Runs locally on CPU — no HF credits.
+Pipeline (README.md "Model and data"). Runs locally on CPU — no HF credits.
 
 Phases (run in order; conversion waits for a confirmed mapping):
 
     python scripts/prepare_data.py inspect [--work-dir DIR]
         Download each source, print real class names + per-split image/annotation
         counts + license. Tries datasets.load_dataset first, falls back to
-        snapshot_download + raw COCO parsing (CLAUDE.md note).
+        snapshot_download + raw COCO parsing.
 
     python scripts/prepare_data.py convert [--work-dir DIR]
         Map source classes -> unified classes (MAPPING below, filled in after the
@@ -20,7 +20,7 @@ Phases (run in order; conversion waits for a confirmed mapping):
 and gitignored). On Windows keep it SHORT (e.g. C:\\sqdata) to stay under the
 260-char path limit, since the Roboflow filenames are long.
 
-Sources (fixed by CLAUDE.md):
+Sources:
   - keremberke/hard-hat-detection                   (COCO zips; main set, ~19.7k imgs)
   - keremberke/construction-safety-object-detection (COCO zips; vests/machinery)
   - Francesco/construction-safety-gsnvb             (HF parquet; small)
@@ -59,7 +59,7 @@ ALIAS = {
 # COCO-zip source splits -> file in the repo. "valid-mini" is skipped.
 COCO_SPLIT_FILES = {"train": "data/train.zip", "valid": "data/valid.zip", "test": "data/test.zip"}
 
-# Unified class list + fixed indices (CLAUDE.md). Order == YOLO class id.
+# Unified class list + fixed indices. Order == YOLO class id.
 UNIFIED = ["person", "helmet", "no_helmet", "vest", "no_vest", "machinery", "vehicle"]
 UNIFIED_IDX = {name: i for i, name in enumerate(UNIFIED)}
 
@@ -256,7 +256,7 @@ def inspect_parquet(repo: str) -> dict:
 
 
 def inspect_source(src: dict) -> dict:
-    """Try load_dataset first (CLAUDE.md), fall back to snapshot + COCO parsing."""
+    """Try load_dataset first, fall back to snapshot + COCO parsing."""
     repo = src["repo"]
     if src["kind"] == "hf-parquet":
         try:
@@ -267,7 +267,7 @@ def inspect_source(src: dict) -> dict:
     try:
         from datasets import load_dataset
 
-        load_dataset(repo)  # expected to fail on datasets>=3; honored per CLAUDE.md
+        load_dataset(repo)  # expected to fail on datasets>=3
         print("    note: load_dataset unexpectedly succeeded; still using COCO parse for exact counts")
     except Exception as e:  # noqa: BLE001
         print(f"    load_dataset not usable ({type(e).__name__}); using snapshot + raw COCO parsing")

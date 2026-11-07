@@ -22,7 +22,7 @@ Works with the v1 dataset (7 classes, no sources.json) and the v2 dataset
 With sources.json present it also validates best.pt per source / pooled view and
 compares v1 best.pt on the same images; results go into metrics.json.
 
-Launch (see CLAUDE.md > Commands):
+Launch:
     hf jobs uv run --flavor t4-small --timeout 30m --secrets HF_TOKEN \
         scripts/train.py --epochs 1 --fraction 0.05 --path-in-repo smoke
 

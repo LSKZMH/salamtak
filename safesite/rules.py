@@ -1,6 +1,6 @@
 """Hazard rules: normalized detections + scene context -> hazards.
 
-Pure functions, no model or I/O imports. The "Hazard rules" table in CLAUDE.md is
+Pure functions, no model or I/O imports. The hazard table in README.md ("What it checks") is
 the source of truth; keep this module, tests/test_rules.py and that table in sync.
 Every hazard carries a one-line plain-English ``reason`` naming what was seen.
 """

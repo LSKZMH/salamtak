@@ -5,7 +5,7 @@
 #   scripts/deploy_space.sh chat-2     # deploy another ref
 #   DRY_RUN=1 scripts/deploy_space.sh  # list what would be left out, push nothing
 #
-# The repo keeps CLAUDE.md, COSTS.md, chat notes etc. for the agents; the Space gets a commit
+# Files in EXCLUDE (team notes, the model-card source) never reach the Space; it gets a commit
 # with the same tree minus EXCLUDE, on top of the Space's own history. After the first deploy,
 # a plain `git push space main` is rejected (non-fast-forward): always deploy with this script.
 set -euo pipefail
