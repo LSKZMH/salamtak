@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import prepare_data_v2 as p2  # noqa: E402
 import pseudo_label as pl  # noqa: E402
 
-# Source class names as listed in chat-6-data-v2.md (Step 2).
+# Source class names as published by each source.
 LISTED = {
     "chd": ["Person", "Hardhat", "NO-Hardhat", "Safety Vest", "NO-Safety Vest", "machinery", "vehicle",
             "utility pole", "Mask", "NO-Mask", "Safety Cone"],

@@ -42,7 +42,7 @@ MAX_ECHO_KIND = 20  # chars of an unknown SAFESITE_DETECTOR value shown in the b
 
 
 def build_primary(kind: str, factory: Callable[[], Any] = detect.YoloDetector) -> tuple[Any, str | None]:
-    """The trained-detector slot: "mock" (default) or "yolo" (Chat 2's YOLO26 from the Hub,
+    """The trained-detector slot: "mock" (default) or "yolo" (the fine-tuned YOLO26 from the Hub,
     configured by SAFESITE_MODEL_REPO / SAFESITE_WEIGHTS_FILE / SAFESITE_MODEL_REVISION).
 
     Never crashes the Space: an unknown value or a model that fails to load falls back to the
@@ -64,7 +64,7 @@ def build_primary(kind: str, factory: Callable[[], Any] = detect.YoloDetector) -
         )
 
 
-# Trained detector: set the Space variable SAFESITE_DETECTOR=yolo once Chat 2's best.pt is on the Hub
+# Trained detector: set the Space variable SAFESITE_DETECTOR=yolo once best.pt is on the Hub
 # (and pin SAFESITE_MODEL_REVISION); no code change needed.
 PRIMARY, LOAD_WARNING = build_primary(os.environ.get("SAFESITE_DETECTOR", "mock"))
 # YOLOE-26 open-vocab finder (harness, scaffold, cords, ...; all of Home mode). Set the Space

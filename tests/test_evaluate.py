@@ -15,7 +15,7 @@ ev = importlib.util.module_from_spec(_spec)
 sys.modules["evaluate"] = ev  # dataclasses need the module registered
 _spec.loader.exec_module(ev)
 
-IDS = ev.CLAUDE_MD_HAZARD_IDS
+IDS = ev.ALL_HAZARD_IDS
 HEADER = "filename,hazards,taken_at,wbgt_c,outdoor,mode,notes"
 
 
@@ -195,10 +195,10 @@ def test_cost_lines_without_total_or_file():
 def test_context_kwargs_match_either_scene_context():
     photo = ev.LabelledPhoto("a.jpg", frozenset(), wbgt_c=30.0, outdoor=False, mode="home")
     when = datetime(2026, 1, 1, 8, 0)
-    chat3 = ev.context_kwargs({"taken_at", "wbgt_c", "outdoor", "mode", "aspect_ratio"}, photo, when, 1.5)
-    chat4 = ev.context_kwargs({"taken_at", "outdoor", "wbgt", "mode"}, photo, when, 1.5)
-    assert chat3 == {"taken_at": when, "wbgt_c": 30.0, "outdoor": False, "mode": "home", "aspect_ratio": 1.5}
-    assert chat4 == {"taken_at": when, "wbgt": 30.0, "outdoor": False, "mode": "home"}
+    v2_style = ev.context_kwargs({"taken_at", "wbgt_c", "outdoor", "mode", "aspect_ratio"}, photo, when, 1.5)
+    v1_style = ev.context_kwargs({"taken_at", "outdoor", "wbgt", "mode"}, photo, when, 1.5)
+    assert v2_style == {"taken_at": when, "wbgt_c": 30.0, "outdoor": False, "mode": "home", "aspect_ratio": 1.5}
+    assert v1_style == {"taken_at": when, "wbgt": 30.0, "outdoor": False, "mode": "home"}
 
 
 def test_load_detector_rejects_bad_spec():
@@ -325,7 +325,7 @@ V2_IDS = ("worker_down", "under_suspended_load", "power_line_contact", "hot_work
 
 
 def test_fallback_list_has_the_v2_hazard_ids():
-    assert set(V2_IDS) <= set(ev.CLAUDE_MD_HAZARD_IDS)
+    assert set(V2_IDS) <= set(ev.ALL_HAZARD_IDS)
     assert all(ev.hazard_mode(i) == "site" for i in V2_IDS)
 
 

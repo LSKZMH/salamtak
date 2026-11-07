@@ -183,4 +183,4 @@ Scores move a little when the prompt set changes, so the shipped set is re-run a
 | `scaffold` | 0.25 | 0.75 | 0.03 | 0.00 | 0.25 | 0.75 | 0.03 | 0.00 |
 | `ladder` | 0.25 | 0.00 | 0.00 | 0.00 | 0.25 | 0.00 | 0.00 | 0.00 |
 
-Recommended cut-offs for `rebar` are not yet in `rules.OPEN_VOCAB_CUTOFFS` (Chat 8 copies them).
+Recommended cut-offs for `rebar` are not yet in `rules.OPEN_VOCAB_CUTOFFS` (copy them there).

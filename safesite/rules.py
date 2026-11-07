@@ -18,7 +18,7 @@ from safesite.types import MODEL_CLASSES_V2, Box, Detection, Hazard, Mode, Scene
 MIN_CONFIDENCE = 0.35  # cut-off for the trained detector (YOLO26s)
 OPEN_VOCAB_MIN_CONFIDENCE = 0.25  # cut-off for the open-vocabulary finder (YOLOE-26)
 # Per-label YOLOE cut-offs (unlisted labels use OPEN_VOCAB_MIN_CONFIDENCE).
-# Copy recommended values here from Chat 9's docs/prompt_bench.md.
+# Copy recommended values here from docs/prompt_bench.md.
 OPEN_VOCAB_CUTOFFS: dict[str, float] = {}
 HEAD_REGION_FRACTION = 0.25  # top quarter of a person box is their head region
 # "No helmet seen" (absence of a helmet box) is judged only for a confident person fully inside
@@ -29,7 +29,7 @@ MACHINERY_ZONE_FACTOR = 0.5  # danger zone: within 0.5 x person height of machin
 FALL_ZONE_FACTOR = 0.25  # "near" a scaffold/ladder: within 0.25 x person height
 WALKWAY_TOP_Y = 2 / 3  # lower third of the frame (y > 2/3) is where people walk
 CHILD_REACH_MIN_Y = 0.5  # objects centred in the lower half of the frame are in a child's reach
-# v2 (starting values from chat-8-rules-v2.md; tune only with evidence)
+# v2 (starting values; tune only with evidence)
 WORKER_DOWN_MIN_CONF = 0.5  # only a confident person box may count as lying down
 WORKER_DOWN_RATIO = 1.4  # real width / height at or above this = lying down
 WORKER_DOWN_MIN_HEIGHT = 0.04  # ignore tiny far-away boxes (fraction of image height)

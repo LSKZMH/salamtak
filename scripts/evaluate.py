@@ -71,7 +71,7 @@ WBGT_CONTEXT_FIELDS = ("wbgt_c", "wbgt")
 EXIT_OK, EXIT_NO_PHOTOS, EXIT_BAD_LABELS, EXIT_SKIPPED = 0, 1, 2, 3
 
 # Fallback when safesite.types has no HAZARD_IDS. Mirrors safesite/rules.py.
-CLAUDE_MD_HAZARD_IDS = (
+ALL_HAZARD_IDS = (
     "no_helmet", "machinery_zone", "fall_no_harness", "midday_ban", "wbgt_stop",
     "no_vest_near_vehicle", "heat_welfare_gap", "trip_cord",
     "worker_down", "under_suspended_load", "power_line_contact", "hot_work_fire",
@@ -479,13 +479,13 @@ def known_hazard_ids() -> tuple[str, ...]:
 
         return tuple(HAZARD_IDS)
     except ImportError:
-        return CLAUDE_MD_HAZARD_IDS
+        return ALL_HAZARD_IDS
 
 
 def labelable_ids(rule_ids: Sequence[str]) -> tuple[str, ...]:
     """Ids allowed in labels.csv: the rules' ids plus the fallback list, so photos can be labelled
     with a new hazard before (or without) the rules that detect it. Such labels count as misses."""
-    return tuple(rule_ids) + tuple(i for i in CLAUDE_MD_HAZARD_IDS if i not in rule_ids)
+    return tuple(rule_ids) + tuple(i for i in ALL_HAZARD_IDS if i not in rule_ids)
 
 
 def unproducible_warnings(photos: Sequence[LabelledPhoto], rule_ids: Collection[str]) -> list[str]:

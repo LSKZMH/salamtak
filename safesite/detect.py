@@ -94,7 +94,7 @@ class YoloDetector:
     """Fine-tuned YOLO26, downloaded from the Hub and warmed up at construction (Space boot)."""
 
     is_mock = False
-    supports_home = False  # trained classes have no cords/knives; Home mode needs YOLOE (Chat 5)
+    supports_home = False  # trained classes have no cords/knives; Home mode needs YOLOE
 
     def __init__(
         self,
@@ -159,7 +159,7 @@ class CombinedDetector:
         self._primary = primary
         self._open_vocab = open_vocab
         self.name = f"{primary.name} + {open_vocab.name}"
-        # getattr: works whether or not the finder declares the contract attributes (chat-5 adds them)
+        # getattr: works whether or not the finder declares the contract attributes (older finders may not)
         self.is_mock = bool(getattr(primary, "is_mock", False) or getattr(open_vocab, "is_mock", False))
         # Labels either part can produce; only declared when both parts declare theirs.
         parts = (getattr(primary, "labels", None), getattr(open_vocab, "labels", None))

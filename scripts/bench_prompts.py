@@ -39,7 +39,7 @@ sys.path.insert(0, str(ROOT))
 from safesite import openvocab  # noqa: E402
 from safesite.types import normalize_label  # noqa: E402
 
-# label -> phrasings to try (from chat-9-detect-app-v2.md)
+# label -> phrasings to try
 # Round 1 = the brief's phrasings; round 2 (after "+") added where round 1 came close or failed.
 NEW_PHRASINGS: Mapping[str, tuple[str, ...]] = {
     "power_line": ("power lines", "overhead power cable", "electric wires",
@@ -335,7 +335,7 @@ def production_section(scores: Scores, truth: Mapping[str, frozenset[str]]) -> l
     pending = [lab for lab, cut in RECOMMENDED_CUTOFFS.items() if deployed_cutoff(lab) != cut]
     if pending:
         lines += ["", f"Recommended cut-offs for {', '.join(f'`{x}`' for x in pending)} are not yet in "
-                  "`rules.OPEN_VOCAB_CUTOFFS` (Chat 8 copies them)."]
+                  "`rules.OPEN_VOCAB_CUTOFFS` (copy them there)."]
     return lines + [""]
 
 

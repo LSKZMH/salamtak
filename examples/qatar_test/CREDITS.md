@@ -1,6 +1,6 @@
 # Photo credits (Qatar test set)
 
-All photos from Wikimedia Commons. Labels drafted by Claude, to be checked by the team.
+All photos from Wikimedia Commons. Labels drafted from the photos, to be checked by the team.
 CC BY-SA photos (and our modified copies) are shared under the same licence.
 
 | file | original | author | licence | changes |

@@ -230,7 +230,7 @@ def write_data_yaml(root: Path, fraction: float, out_dir: Path,
 # ---------------------------------------------------------------- per-source helpers (pure)
 
 def images_for_alias(paths: list[Path], alias: str) -> list[Path]:
-    """Images named `{alias}_...` (Chat 6 naming contract)."""
+    """Images named `{alias}_...` (prepare_data_v2.py naming)."""
     prefix = f"{alias}_"
     return [p for p in paths if Path(p).name.startswith(prefix)]
 

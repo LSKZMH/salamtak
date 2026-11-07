@@ -1,6 +1,6 @@
 """Build the v2 (11-class) YOLO dataset and push it as a private Hub dataset.
 
-Runs locally on CPU (no HF credits). Chat 6 owns this file; v1 stays in prepare_data.py.
+Runs locally on CPU (no HF credits). v1 stays in prepare_data.py.
 
     python scripts/prepare_data_v2.py download  [--work-dir C:\\sqdata2]
     python scripts/prepare_data_v2.py inspect   [--work-dir ...]   # class names, counts, licenses

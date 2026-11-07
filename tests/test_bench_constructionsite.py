@@ -135,7 +135,7 @@ def test_labels_csv_is_valid_evaluate_input():
     sample = [cs.ImageLabels("0000424", frozenset({"no_helmet", "machinery_zone"}), False, True),
               cs.ImageLabels("0000007", frozenset(), False, False)]
     text = cs.labels_csv(sample)
-    photos = ev.parse_labels(text.splitlines(), ev.CLAUDE_MD_HAZARD_IDS)
+    photos = ev.parse_labels(text.splitlines(), ev.ALL_HAZARD_IDS)
     assert [p.filename for p in photos] == ["images/0000007.jpg", "images/0000424.jpg"]
     assert photos[1].hazards == {"no_helmet", "machinery_zone"}
     assert all(p.taken_at is None and p.outdoor and p.mode == "site" for p in photos)

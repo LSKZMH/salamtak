@@ -59,7 +59,7 @@ HOME_PROMPTS: Mapping[str, str] = {
 }
 PROMPT_SETS: Mapping[str, Mapping[str, str]] = {"site": SITE_PROMPTS, "home": HOME_PROMPTS}
 
-# Chat 4's stub Detection has a ``source`` field; Chat 3's final types.py does not.
+# Some versions of Detection have a ``source`` field and some do not.
 _DETECTION_HAS_SOURCE = "source" in {f.name for f in fields(Detection)}
 
 

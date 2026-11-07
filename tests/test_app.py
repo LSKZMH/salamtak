@@ -1,5 +1,5 @@
 """App-level tests: Gradio handler, time resolution, alert/score rendering, annotation.
-Rule-by-rule tests live in tests/test_rules.py (Chat 3)."""
+Rule-by-rule tests live in tests/test_rules.py."""
 from __future__ import annotations
 
 from datetime import datetime

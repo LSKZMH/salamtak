@@ -4,8 +4,8 @@ Photos hand-labelled with which hazards each one contains.
 `python scripts/evaluate.py` scores the pipeline against `labels.csv`.
 
 **Starter set (current):** 12 freely licensed Wikimedia Commons photos, 9 from Qatar and 3 from Dubai;
-6 with a hazard and 6 clean. Credits and licences are in [CREDITS.md](CREDITS.md). Labels were drafted by
-Claude from looking at each photo: **a teammate should check them before the numbers go on a slide.**
+6 with a hazard and 6 clean. Credits and licences are in [CREDITS.md](CREDITS.md). Labels were drafted
+from looking at each photo: **a teammate should check them before the numbers go on a slide.**
 `taken_at` is set to a November morning so the heat rules stay off; this set measures the vision hazards.
 Our own photos can be added as extra rows at any time.
 

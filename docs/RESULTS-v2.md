@@ -1,6 +1,6 @@
 # Results v2: Salamtak سلامتك hazard evaluation
 
-Status: **the Space runs v2n + the helmet fix** (captain's call, deployed by Chat 9 as `0f2541a`). Measured live (Chat 10, 07 Nov).
+Status: **the Space runs v2n + the helmet fix** (captain's call, deployed as `0f2541a`). Measured live on 07 Nov.
 v2 = `plitip/team-qh-091-safesite` `v2/best.pt` (yolo26s, 61 epochs); **v2n = `v2n/best.pt` @ `b3fac75` (yolo26n, 83 epochs), the shipped model.**
 
 ## Pitch numbers (shipped: v2n + new rules + helmet fix, Space at `0f2541a`)
@@ -11,7 +11,7 @@ Measured live on the Space after the deploy (`python scripts/evaluate.py --space
 |---|---|---|
 | Qatar set: hazards caught | 25% (2/8) | **62% (5/8)** |
 | Qatar set: false alarms per photo | 0.00 | **0.00** (0 of 6 clean photos flagged) |
-| CPU seconds per photo in the Space | 0.10 mean · 0.18 max | **0.09 mean · 0.14 max** in this run (Chat 9 saw 0.09–0.21 s) |
+| CPU seconds per photo in the Space | 0.10 mean · 0.18 max | **0.09 mean · 0.14 max** in this run (other runs: 0.09–0.21 s) |
 | ConstructionSite subset (outside benchmark, local) | 24% caught · 0.10 FA/photo | **61% caught (123/202) · 0.32 FA/photo** |
 | Credits spent | | **≈ $8.95** (`COSTS.md`) |
 
@@ -32,7 +32,7 @@ The v2n column below is v2n with the rules **before** the helmet fix (live Space
 
 Gate 3 criterion 4 (≤ 3.0 s per photo in the Space): **pass** on v1 (0.18 s worst case).
 
-## Gate 3 (v2 replaces v1?) — Chat 10's criteria
+## Gate 3 (v2 replaces v1?)
 
 | # | Criterion | v1 + new rules | v2 + new rules | Result |
 |---|---|---|---|---|
@@ -40,12 +40,12 @@ Gate 3 criterion 4 (≤ 3.0 s per photo in the Space): **pass** on v1 (0.18 s wo
 | 3 | Qatar false alarms per photo not higher by > 0.1 | 0.00 | 0.25 (+0.25) | **FAIL** |
 | 4 | CPU s/photo in the Space ≤ 3.0 | 0.09 mean · 0.10 max | ≈ same (ratio 0.98) | pass |
 
-From Chat 7's `metrics.json` (Chat 7 owns 1–2): criterion 1 helmet 0.937 vs floor 0.919 pass, **no_helmet 0.905 vs floor
+From the training run's `metrics.json` (criteria 1–2): criterion 1 helmet 0.937 vs floor 0.919 pass, **no_helmet 0.905 vs floor
 0.908 fails by 0.003**; criterion 2 (fully labelled cs/fr/chd/ppe) person 0.80 vs 0.50, vest 0.84 vs 0.56, no_vest 0.62 vs 0.22: pass.
 **As written, Gate 3 fails for v2 (s): keep v1 weights.**
 
 **Decision: the captain overrode Gate 3 and the Space ships v2n** (`v2n/best.pt` @ `b3fac75`). Measured on the live Space with the
-same rules, v2n passes Chat 10's criteria:
+same rules, v2n passes these criteria:
 
 | # | Criterion | v1 + new rules | v2n + new rules (live) | Result |
 |---|---|---|---|---|
@@ -53,11 +53,11 @@ same rules, v2n passes Chat 10's criteria:
 | 3 | Qatar false alarms per photo not higher by > 0.1 | 0.00 | 0.08 (+0.08) | pass |
 | 4 | CPU s/photo in the Space ≤ 3.0 | 0.09 mean · 0.10 max | 0.08 mean · 0.17 max | pass |
 
-v2n's one false alarm is `no_helmet` on `dubai_night_precast_lift` (night shot). Criterion 1 for v2n (Chat 7's metrics, v1 val):
+v2n's one false alarm is `no_helmet` on `dubai_night_precast_lift` (night shot). Criterion 1 for v2n (training metrics, v1 val):
 helmet 0.932 vs floor 0.919 pass, no_helmet 0.897 vs floor 0.908 **misses by 0.011**. Criterion 2: person/vest/no_vest
 0.761/0.827/0.587 vs v1 0.50/0.56/0.22, pass.
 
-**Helmet absence fix** (Chat 8, `main` at `4f1b5a1`, merged 10:25 after the freeze; **deployed** to the Space as `0f2541a`, and the live Qatar result matches the local one below):
+**Helmet absence fix** (`main` at `4f1b5a1`, merged 10:25 after the freeze; **deployed** to the Space as `0f2541a`, and the live Qatar result matches the local one below):
 "no helmet seen" now needs a person with confidence ≥ 0.5 that isn't touching the frame edge, while an explicit bare-head box
 still counts. Measured locally with v2n + YOLOE. Local `main` before the fix reproduced the live Space exactly on the Qatar set.
 
@@ -70,7 +70,7 @@ The fix only changes `no_helmet`. On ConstructionSite, catches fall from 79% to 
 from 32% to 19% (108 to 63 of 334). The 17 lost catches are bare heads on small or edge-cut workers, which are common in
 ConstructionSite's wide shots. `machinery_zone` and `fall_no_harness` are unchanged.
 
-**Why v2's false alarms rise, and a possible fix (Chat 8's call):** all 3 Qatar false alarms come from rule geometry, not from v2
+**Why v2's false alarms rise, and a possible fix:** all 3 Qatar false alarms come from rule geometry, not from v2
 seeing a hazard that isn't there. v2 finds far more people, which exposes it:
 - `no_helmet` fires on *absence* of a helmet box: a small far worker who wears a helmet (`doha_alsadd_excavator`) and a 0.46-confidence
   "person" cut off at the frame edge (`pearl_qanat_mast_platform`).
@@ -86,8 +86,8 @@ border (else require an explicit `no_helmet` box), and skip machinery/vehicle bo
 
 **Preview, v1 + new rules before deploy** (local, `main` at `fa53518`, `--detector combined`): same 25% (2/8) catch rate and
 0 false alarms. The new rules have no inputs yet: `crane_hook`, `rebar`, `utility_pole`, `power_line`, `fire`, `welding`, …
-come only from Chat 9's new YOLOE prompts or the v2 weights. No regression: `worker_down` did not fire on the seated
-worker or the crowd photos. The official column is measured on the Space after Chat 9 deploys.
+come only from the new YOLOE prompts or the v2 weights. No regression: `worker_down` did not fire on the seated
+worker or the crowd photos. The official column is measured on the Space after deploying.
 
 **Preview, v2 mid-run checkpoint** (`v2/checkpoints/last.pt` at epoch 35, 03:15; local, `--detector combined`, new rules):
 Qatar catch rate **62% (5/8)**: all 4 `no_helmet` and 1 of 2 `machinery_zone`. False alarms **0.17 per photo** (2), clean photos
@@ -130,7 +130,7 @@ used for that (evaluation only).
   with a pinned November-morning time (no heat rule fires) and reads back the hazard table and the Space's own timing.
   The same photos run locally (`--detector combined`, trained YOLO26 + YOLOE) gave identical hazards.
 - **Space CPU:** cpu-upgrade (8 vCPU). Seconds are measured inside the Space's `analyze()` (detect + rules + score + annotate).
-  Local laptop timings are not used: five chats share that CPU (100% load during the run), which inflated them 4–10×.
+  Local laptop timings are not used: other jobs shared that CPU (100% load during the run), which inflated them 4–10×.
 - **Before = current `main`** at `d60cfbb`: v1 weights `plitip/team-qh-091-safesite@835deaa`, old rules, YOLOE-26n.
 
 ## Qatar set: per hazard (before)
@@ -175,7 +175,7 @@ Before = `d60cfbb` (old rules); v1 + new rules = `main` at `fa53518`; both train
 
 ## Caveats (keep these next to any number on a slide)
 
-- **Small Qatar set:** 12 photos and 8 labelled hazards; one photo changes the catch rate by 12 points. Labels were drafted by Claude and
+- **Small Qatar set:** 12 photos and 8 labelled hazards; one photo changes the catch rate by 12 points. Labels were drafted from the photos and
   still need a teammate's check.
 - **ConstructionSite is not Gulf sites**, and it is evaluation-only (card license CC BY-NC 4.0, gated): never trained on, never committed.
 - **Possible leakage for v2:** ConstructionSite's images come from MOCS, and the v2 training mix includes Roboflow `yisong-li/mocs`.
@@ -187,9 +187,9 @@ Before = `d60cfbb` (old rules); v1 + new rules = `main` at `fa53518`; both train
 - **Benchmark "no violation" is the annotators' judgement**, and its photos are mostly MOCS sites in China, often wide shots
   with small, distant workers, harder than our demo photos. Some `no_helmet` "false alarms" may be real bare heads they didn't flag.
 
-## Detector mAP50 (from Chat 7)
+## Detector mAP50
 
-Both models on the **same** images (Chat 7's `v2/metrics.json`):
+Both models on the **same** images (`v2/metrics.json`):
 
 | Val set | Model | person | helmet | no_helmet | vest | no_vest | machinery | vehicle | mean |
 |---|---|---|---|---|---|---|---|---|---|
