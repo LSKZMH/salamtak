@@ -298,6 +298,11 @@ EXAMPLES = [
     [str(EXAMPLES_DIR / "qatar_test" / "doha_roadside_crew_meeting.jpg"), "2026-07-15 12:30", 33.5, True, "ar", "Site"],
     # Workers walking away from camera on a winter morning: the helmet check on its own.
     [str(EXAMPLES_DIR / "qatar_test" / "dubai_workers_walking.jpg"), "2026-11-05 08:00", None, True, "en", "Site"],
+    # Held-out CC BY 4.0 photos showing v2 classes, credited in examples/v2_classes/CREDITS.md.
+    # Excavators working under overhead lines: power_line_contact.
+    [str(EXAMPLES_DIR / "v2_classes" / "earthworks_dump_trucks.jpg"), "2026-11-05 08:00", None, True, "en", "Site"],
+    # Mixer truck passing a pole, nobody on foot: machinery, vehicle and pole are found, verdict Safe.
+    [str(EXAMPLES_DIR / "v2_classes" / "mixer_truck_utility_pole.jpg"), "2026-11-05 08:00", None, True, "en", "Site"],
     [str(EXAMPLES_DIR / "home_cords_floor.jpg"), "", None, False, "hi", "Home"],  # CC BY-SA, see examples/CREDITS.md
 ]
 
