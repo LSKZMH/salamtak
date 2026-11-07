@@ -21,6 +21,10 @@ OPEN_VOCAB_MIN_CONFIDENCE = 0.25  # cut-off for the open-vocabulary finder (YOLO
 # Copy recommended values here from Chat 9's docs/prompt_bench.md.
 OPEN_VOCAB_CUTOFFS: dict[str, float] = {}
 HEAD_REGION_FRACTION = 0.25  # top quarter of a person box is their head region
+# "No helmet seen" (absence of a helmet box) is judged only for a confident person fully inside
+# the frame (see BORDER_MARGIN): small far workers and cut-off people gave false alarms on the
+# Qatar set. An explicit no_helmet (bare-head) box always counts.
+HELMET_ABSENCE_MIN_CONF = 0.5
 MACHINERY_ZONE_FACTOR = 0.5  # danger zone: within 0.5 x person height of machinery/vehicle
 FALL_ZONE_FACTOR = 0.25  # "near" a scaffold/ladder: within 0.25 x person height
 WALKWAY_TOP_Y = 2 / 3  # lower third of the frame (y > 2/3) is where people walk
@@ -213,6 +217,8 @@ def _person_no_helmet(
         )
     if any(overlaps(h.box, head) for h in helmets):
         return None
+    if person.confidence < HELMET_ABSENCE_MIN_CONF or touches_border(person.box):
+        return None  # too unsure or cut off to call a missing helmet
     return Hazard.of(
         "no_helmet",
         f"Person {index + 1}: no helmet seen on their head.",
