@@ -55,7 +55,8 @@ all hazards are Medium ("Report to your supervisor"), **Safe** if none. A photo 
 
 **Tabs:** *Photo* (upload or webcam snapshot, with date/time, WBGT, outdoor, language and Site / Home mode) and
 *Live* (webcam at about one frame per second, trained detector plus rules; a hazard shows once it is seen in 2 of
-3 frames).
+3 frames). No webcam? **Play demo site camera** runs an 11-second CCTV-style clip through the same detector and rules,
+frame by frame (clip: Acabashi, CC BY-SA 4.0, via Wikimedia Commons; see `examples/demo_video/CREDITS.md`).
 
 ## What it checks (Site mode)
 
